@@ -174,8 +174,8 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
       return fail(503, 'upstream_unavailable', error.message, { retryable: false });
     }
     if (error instanceof InvalidCredentialError) {
-      // Distinct from "no key": the key is present and Gemini rejected it.
-      console.error('[brandos] gemini rejected the key');
+      // Distinct from "no key": the key is present and Groq rejected it.
+      console.error('[brandos] groq rejected the key');
       return fail(503, 'model_key_invalid', error.message, { retryable: false });
     }
     if (error instanceof ModelTimeoutError) {

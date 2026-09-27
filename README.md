@@ -25,9 +25,12 @@ npm run build
 Requires Node 22.18 or newer (the test suite runs `.ts` files directly through
 Node's type stripping).
 
-Credentials resolve the way the Anthropic SDK resolves them: `ANTHROPIC_API_KEY`,
-`ANTHROPIC_AUTH_TOKEN`, or a profile from `ant auth login`. Copy `.env.example`
-if you want to keep a key in the project, or export it in your shell.
+Set `GROQ_API_KEY` to a key from https://console.groq.com/keys. Copy
+`.env.example` if you want to keep it in the project, or export it in your
+shell. It is read server-side only and is never bundled for the browser.
+
+`GROQ_MODEL` optionally overrides the default model — useful when a model is
+retired or you hit its rate limit. It must support structured outputs.
 
 ## Use it from the command line
 
@@ -445,8 +448,10 @@ actually caches depends on the model's minimum cacheable prefix length, so the
 run reports `cacheReadTokens` and the CLI says so explicitly when nothing was
 served from cache, rather than letting you assume it worked.
 
-**Model configuration.** `claude-opus-5` with adaptive thinking and `high`
-effort, overridable per run (`--model`, `--effort`, `--max-tokens`). Refusals and
+**Model configuration.** `openai/gpt-oss-120b` on Groq, with a configurable
+`reasoning_effort` and `high` effort by default. The model comes from
+`GROQ_MODEL`, falling back to `DEFAULT_MODEL`; both are overridable per run
+(`--model`, `--effort`, `--max-tokens`). Refusals and
 `max_tokens` truncation are detected and raised as typed errors rather than
 surfacing as a half-parsed section.
 

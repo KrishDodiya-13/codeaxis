@@ -82,6 +82,7 @@ export {
   BrandClient,
   CREDENTIAL_ENV_VAR,
   MODEL_ENV_VAR,
+  resolveModel,
   DEFAULT_MODEL,
   InvalidCredentialError,
   MissingCredentialError,
@@ -92,7 +93,7 @@ export {
   SectionParseError,
   addUsage,
   hasCredentialEnv,
-  toGeminiSchema,
+  toGroqSchema,
 } from './client.ts';
 export type { BrandClientOptions, DeriveOptions, Effort, SectionDeriver, Usage } from './client.ts';
 
@@ -151,8 +152,7 @@ export type {
   PositionResult,
 } from './position.ts';
 
-export { createWebSearchCompetitorLookup, parseCompetitorList } from './competitors.ts';
-export type { WebSearchLookupOptions } from './competitors.ts';
+export { parseCompetitorList } from './competitors.ts';
 
 export {
   ARCHETYPES,

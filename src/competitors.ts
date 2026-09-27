@@ -1,86 +1,24 @@
 /**
- * An optional competitor lookup backed by Gemini's Google Search grounding.
+ * Helpers for the optional competitor list POSITION can be given.
  *
- * Entirely opt-in. POSITION works correctly with no lookup at all — its prompt
- * already asks for the realistic informal alternative when no competitors are
- * supplied — and nothing here is on the default path. Deployments without web
- * access simply never construct this.
+ * Supplying competitors is entirely opt-in. POSITION works correctly with none — its
+ * prompt already asks for the realistic informal alternative when none are supplied —
+ * and nothing on the default path provides any.
  *
- * Kept in its own file so the core never imports it, and so a different backend
- * (an internal catalogue, a CRM, a static list) can satisfy `CompetitorLookup`
- * without touching anything else.
+ * Provider note: this used to also export `createWebSearchCompetitorLookup`, backed by
+ * Gemini's Google Search grounding. That went when the provider moved to Groq, which has
+ * no drop-in equivalent: keeping it would have meant retaining the entire Gemini SDK and
+ * a second API key for a path the application never took. The `CompetitorLookup`
+ * interface in `position.ts` is unchanged and provider-agnostic, so a lookup backed by
+ * anything — a search API, an internal catalogue, a static list — still plugs in, and
+ * `knownCompetitors` still works as it always did.
  */
-import { GoogleGenAI } from '@google/genai';
-import { CREDENTIAL_ENV_VAR, DEFAULT_MODEL } from './client.ts';
-import type { CompetitorLookup } from './position.ts';
-import type { Discovery } from './types.ts';
-
-export type WebSearchLookupOptions = {
-  client?: GoogleGenAI;
-  model?: string;
-  /** Cap on searches per lookup. Kept low: this is one narrow question. */
-  maxUses?: number;
-  /** Most competitors to return. */
-  limit?: number;
-};
 
 /**
- * Builds a lookup that asks the model to search for existing alternatives.
+ * Pulls a JSON array of names out of a reply.
  *
- * The result is advisory. Anything unparseable yields an empty list rather than an
- * error, because `position` treats the lookup as an enhancement and an empty
- * result is a perfectly good answer — it means the prompt falls back to naming the
- * informal status quo, which is the correct behaviour anyway.
- */
-export function createWebSearchCompetitorLookup(
-  options: WebSearchLookupOptions = {},
-): CompetitorLookup {
-  const client =
-    options.client ?? new GoogleGenAI({ apiKey: (process.env[CREDENTIAL_ENV_VAR] ?? '').trim() });
-  const model = options.model ?? DEFAULT_MODEL;
-  const maxUses = options.maxUses ?? 3;
-  const limit = options.limit ?? 6;
-
-  return async (discovery: Discovery): Promise<string[]> => {
-    const response = await client.models.generateContent({
-      model,
-      contents: `Search for existing products that solve this problem.
-
-Problem: ${discovery.problem}
-Audience: ${discovery.targetAudience}
-Need: ${discovery.userNeed}
-
-Return at most ${limit} real, existing products or services, including informal alternatives people improvise with (a spreadsheet, a group chat, a subreddit) where those are what people actually use.
-
-Reply with nothing but a JSON array of strings, e.g. ["Product A", "Discord servers"]. If you find none, reply with [].`,
-      config: {
-        systemInstruction:
-          'You identify existing products that solve a given problem. You are a lookup step, not a ' +
-          'strategist: return names only, and never invent a product you did not find.',
-        // Grounding runs on Google's side. A structured response schema cannot be combined
-        // with a tool, so the reply is parsed tolerantly instead — which is fine here,
-        // because an empty result is a perfectly good answer for an advisory lookup.
-        tools: [{ googleSearch: {} }],
-        maxOutputTokens: 2000,
-      },
-    });
-
-    if (response.promptFeedback?.blockReason !== undefined) return [];
-
-    return parseCompetitorList(textOf(response), limit);
-  };
-}
-
-function textOf(response: { text?: string }): string {
-  return response.text ?? '';
-}
-
-/**
- * Pulls a JSON array of names out of the reply.
- *
- * Tolerant on purpose: the model was asked for a bare array but may wrap it in
- * prose or a fenced block, and this is an advisory lookup where a parse failure
- * should cost nothing.
+ * Tolerant on purpose: a lookup is asked for a bare array but may wrap it in prose or a
+ * fenced block, and this is advisory, where a parse failure should cost nothing.
  */
 export function parseCompetitorList(text: string, limit = 6): string[] {
   const match = /\[[\s\S]*\]/.exec(text);

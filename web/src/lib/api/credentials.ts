@@ -14,40 +14,40 @@
  */
 
 /** The placeholder shipped in `.env.example`. */
-const PLACEHOLDER = 'your-gemini-api-key';
+const PLACEHOLDER = 'your-groq-api-key';
 
 /**
  * The shortest plausible real key.
  *
- * Gemini keys are around forty characters. Anything under this is a truncated paste or a
- * stand-in, not a key — and treating it as one costs a round trip and hands back a
- * message that points at the wrong thing.
+ * Groq keys are `gsk_` followed by a long random tail. Anything under this is a truncated
+ * paste or a stand-in, not a key — and treating it as one costs a round trip and hands
+ * back a message that points at the wrong thing.
  */
 const MIN_KEY_LENGTH = 20;
 
 /** A message naming what is wrong, or null when a usable credential is configured. */
 export function credentialProblem(): string | null {
-  const key = (process.env.GEMINI_API_KEY ?? '').trim();
+  const key = (process.env.GROQ_API_KEY ?? '').trim();
 
   if (key === '') {
     return (
-      'No model API key is configured on the server. Add GEMINI_API_KEY to ' +
+      'No model API key is configured on the server. Add GROQ_API_KEY to ' +
       'web/.env.local and restart the dev server.'
     );
   }
 
   if (key === PLACEHOLDER) {
     return (
-      'GEMINI_API_KEY in web/.env.local is still the placeholder from .env.example. ' +
-      'Replace it with a real key from aistudio.google.com/apikey, then restart the dev server.'
+      'GROQ_API_KEY in web/.env.local is still the placeholder from .env.example. ' +
+      'Replace it with a real key from console.groq.com/keys, then restart the dev server.'
     );
   }
 
   if (key.length < MIN_KEY_LENGTH) {
     return (
-      `GEMINI_API_KEY in web/.env.local is only ${key.length} characters, which is too ` +
+      `GROQ_API_KEY in web/.env.local is only ${key.length} characters, which is too ` +
       'short to be a real key — it looks like a placeholder or a truncated paste. Copy the ' +
-      'whole key from aistudio.google.com/apikey, then restart the dev server.'
+      'whole key from console.groq.com/keys, then restart the dev server.'
     );
   }
 

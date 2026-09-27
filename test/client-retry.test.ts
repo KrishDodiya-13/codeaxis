@@ -7,23 +7,23 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { GoogleGenAI } from '@google/genai';
+import type Groq from 'groq-sdk';
 import {
   BrandClient,
   DEFAULT_MODEL,
   InvalidCredentialError,
   MODEL_ENV_VAR,
   ModelRequestError,
+  resolveModel,
 } from '../src/client.ts';
 import { DiscoverResultSchema } from '../src/schemas.ts';
 import { discoverResult } from './fixtures.ts';
 
-/** A reply carrying `value` as its JSON text. */
+/** A reply carrying `value` as its JSON content. */
 function reply(value: unknown) {
   return {
-    text: JSON.stringify(value),
-    candidates: [{ finishReason: 'STOP' }],
-    usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 10 },
+    choices: [{ message: { content: JSON.stringify(value) }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 10, completion_tokens: 10 },
   };
 }
 
@@ -34,15 +34,17 @@ function reply(value: unknown) {
 function scriptedClient(outcomes: unknown[]) {
   const state = { attempts: 0 };
   const client = {
-    models: {
-      generateContent: async () => {
-        const outcome = outcomes[state.attempts];
-        state.attempts++;
-        if (outcome instanceof Error) throw outcome;
-        return outcome;
+    chat: {
+      completions: {
+        create: async () => {
+          const outcome = outcomes[state.attempts];
+          state.attempts++;
+          if (outcome instanceof Error) throw outcome;
+          return outcome;
+        },
       },
     },
-  } as unknown as GoogleGenAI;
+  } as unknown as Groq;
   return { client, state };
 }
 
@@ -100,7 +102,7 @@ describe('BrandClient retries transient model failures', () => {
 
   it('does not retry a bad credential, which would fail identically every time', async () => {
     const { run, state } = await derive([
-      withStatus('API key not valid. Please pass a valid API key.', 400),
+      withStatus('invalid_api_key: the key is not valid', 401),
       reply(discoverResult),
     ]);
 
@@ -149,10 +151,10 @@ describe('BrandClient model selection', () => {
 
   it('takes the env override when one is set', async () => {
     const previous = process.env[MODEL_ENV_VAR];
-    process.env[MODEL_ENV_VAR] = 'gemini-3-flash-preview';
+    process.env[MODEL_ENV_VAR] = 'llama-3.3-70b-versatile';
     try {
       const { model } = await derive([reply(discoverResult)]);
-      assert.equal(model, 'gemini-3-flash-preview');
+      assert.equal(model, 'llama-3.3-70b-versatile');
     } finally {
       if (previous === undefined) delete process.env[MODEL_ENV_VAR];
       else process.env[MODEL_ENV_VAR] = previous;
@@ -173,10 +175,61 @@ describe('BrandClient model selection', () => {
 
   it('lets an explicit option win over the env override', async () => {
     const previous = process.env[MODEL_ENV_VAR];
-    process.env[MODEL_ENV_VAR] = 'gemini-3-flash-preview';
+    process.env[MODEL_ENV_VAR] = 'llama-3.3-70b-versatile';
     try {
-      const { model } = await derive([reply(discoverResult)], { model: 'gemini-3.1-flash-lite' });
-      assert.equal(model, 'gemini-3.1-flash-lite');
+      const { model } = await derive([reply(discoverResult)], { model: 'openai/gpt-oss-20b' });
+      assert.equal(model, 'openai/gpt-oss-20b');
+    } finally {
+      if (previous === undefined) delete process.env[MODEL_ENV_VAR];
+      else process.env[MODEL_ENV_VAR] = previous;
+    }
+  });
+});
+
+describe('the model is resolved in exactly one place', () => {
+  /**
+   * `resolveModel` is the only resolution point, so the model a caller ends up with and
+   * the model the constructor sends are the same value by construction. This pins that,
+   * so a future caller that reads DEFAULT_MODEL directly — and so silently ignores
+   * GROQ_MODEL — fails here rather than in production.
+   */
+  it('gives BrandClient exactly what resolveModel returns', async () => {
+    const previous = process.env[MODEL_ENV_VAR];
+    process.env[MODEL_ENV_VAR] = 'llama-3.3-70b-versatile';
+    try {
+      const { model, run, state } = await derive([reply(discoverResult)]);
+      await run();
+      assert.equal(state.attempts, 1);
+      assert.equal(model, resolveModel());
+      assert.equal(model, 'llama-3.3-70b-versatile');
+      assert.notEqual(model, DEFAULT_MODEL);
+    } finally {
+      if (previous === undefined) delete process.env[MODEL_ENV_VAR];
+      else process.env[MODEL_ENV_VAR] = previous;
+    }
+  });
+
+  it('sends the resolved model on the actual request', async () => {
+    const previous = process.env[MODEL_ENV_VAR];
+    process.env[MODEL_ENV_VAR] = 'openai/gpt-oss-20b';
+    try {
+      const captured: Array<Record<string, any>> = [];
+      const fake = {
+        chat: {
+          completions: {
+            create: async (params: Record<string, any>) => {
+              captured.push(params);
+              return reply(discoverResult);
+            },
+          },
+        },
+      } as unknown as Groq;
+
+      const client = new BrandClient({ client: fake });
+      await client.deriveSection('discovery', '{}', DiscoverResultSchema);
+
+      assert.equal(captured[0]!.model, 'openai/gpt-oss-20b');
+      assert.equal(captured[0]!.model, resolveModel());
     } finally {
       if (previous === undefined) delete process.env[MODEL_ENV_VAR];
       else process.env[MODEL_ENV_VAR] = previous;

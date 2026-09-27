@@ -1,66 +1,83 @@
 /**
- * The Gemini call behind every pipeline step.
+ * The Groq call behind every pipeline step.
  *
  * One function does all the model work: it assembles the shared methodology prefix plus
- * the step instructions as a system instruction, sends the serialized state, and returns
- * a value already validated against the step's Zod schema. Steps therefore contain
+ * the step instructions as a system message, sends the serialized state, and returns a
+ * value already validated against the step's Zod schema. Steps therefore contain
  * strategy, not plumbing.
  *
- * Provider note: this was an Anthropic integration. Only this file and `competitors.ts`
- * knew that, because every stage goes through `SectionDeriver` — so swapping the provider
- * did not touch a prompt, a schema, a route or the frontend. The public surface here
+ * Provider note: this integration has been Anthropic and then Gemini. Only this file
+ * ever knew that, because every stage goes through `SectionDeriver` — so swapping the
+ * provider touches no prompt, schema, route, or frontend. The public surface here
  * (`BrandClient`, `deriveSection`, `DeriveOptions`, `Usage`, `SectionParseError`,
- * `RefusalError`) is unchanged for the same reason.
+ * `RefusalError`, `Effort`) is unchanged for the same reason.
  */
-import { GoogleGenAI } from '@google/genai';
+import Groq from 'groq-sdk';
 import { z } from 'zod';
 import { METHODOLOGY, STEP_INSTRUCTIONS, buildUserPrompt } from './prompts.ts';
 import type { BrandStateSection } from './types.ts';
 
 /**
- * The model.
+ * The fallback model, used only when {@link MODEL_ENV_VAR} is not set.
  *
- * Gemini 2.5 Flash: the current fast model that supports both native structured output
- * (`responseJsonSchema`) and a configurable thinking budget, which is what this pipeline
- * needs — every call wants a schema-valid object, and the harder stages want reasoning
- * depth. Flash rather than Pro because the stages are many and each one is a single
- * bounded judgement, so latency and cost matter more than the last increment of quality.
+ * `openai/gpt-oss-120b` is a Groq production model that supports both native structured
+ * output (`response_format: json_schema`) and a configurable `reasoning_effort`, which
+ * is what this pipeline needs — every call wants a schema-valid object, and the harder
+ * stages want reasoning depth. Its 131k context comfortably holds the serialized state,
+ * and its 65k completion cap is far above anything a section needs.
+ *
+ * Model availability changes, so this is deliberately only a default: set `GROQ_MODEL`
+ * to move off it without touching code.
  */
-export const DEFAULT_MODEL = 'gemini-3.8-flash';
+export const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 
 /** The environment variable holding the key. Server-side only, never `NEXT_PUBLIC_`. */
-export const CREDENTIAL_ENV_VAR = 'GEMINI_API_KEY';
+export const CREDENTIAL_ENV_VAR = 'GROQ_API_KEY';
 
 /** Optional override for {@link DEFAULT_MODEL}. Server-side only. */
-export const MODEL_ENV_VAR = 'GEMINI_MODEL';
+export const MODEL_ENV_VAR = 'GROQ_MODEL';
+
+/**
+ * The model to call: an explicit argument, then `GROQ_MODEL`, then the default.
+ *
+ * Every caller resolves through this, so configuring the model in one place configures
+ * all of them. A blank or whitespace-only env value is treated as unset rather than
+ * passed on as an empty model name.
+ */
+export function resolveModel(explicit?: string): string {
+  if (explicit !== undefined && explicit.trim() !== '') return explicit;
+  const fromEnv = (process.env[MODEL_ENV_VAR] ?? '').trim();
+  return fromEnv === '' ? DEFAULT_MODEL : fromEnv;
+}
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /**
- * Effort as a Gemini thinking budget, in tokens.
+ * Effort as a Groq `reasoning_effort`.
  *
- * The pipeline's `Effort` vocabulary is kept so no caller had to change. `low` disables
- * thinking outright, which is right for the mechanical stages; the upper levels buy
- * reasoning for the stages that are actually judgement calls.
+ * The pipeline's five-level `Effort` vocabulary is kept so no caller had to change, but
+ * gpt-oss models accept only `low | medium | high`, so the top three levels all map to
+ * `high`. That is a ceiling, not a silent downgrade: `high` is the most reasoning the
+ * model offers, and the stages that ask for `xhigh` or `max` still get it.
  */
-const THINKING_BUDGET: Record<Effort, number> = {
-  low: 0,
-  medium: 2048,
-  high: 8192,
-  xhigh: 16384,
-  max: 24576,
+const REASONING_EFFORT: Record<Effort, 'low' | 'medium' | 'high'> = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'high',
+  max: 'high',
 };
 
 export type BrandClientOptions = {
-  /** Defaults to `gemini-3.8-flash`. */
+  /** Overrides `GROQ_MODEL` and the default. See {@link resolveModel}. */
   model?: string;
-  /** Thinking depth and token spend. Defaults to `high`. */
+  /** Reasoning depth and token spend. Defaults to `high`. */
   effort?: Effort;
   maxTokens?: number;
   /** How long to wait for one call. Defaults to three minutes. */
   timeoutMs?: number;
   /** Pass an existing SDK client to share it, or to inject one in tests. */
-  client?: GoogleGenAI;
+  client?: Groq;
 };
 
 /** What a call cost, accumulated per run so a pipeline can report its spend. */
@@ -101,7 +118,7 @@ export type DeriveOptions = {
    */
   userPrompt?: string;
   /**
-   * Replaces the per-section instruction block in the system instruction.
+   * Replaces the per-section instruction block in the system message.
    *
    * The BRAND OS compile step uses this: it is not a section step, so the instructions
    * for the section it writes to are the wrong ones.
@@ -179,10 +196,10 @@ export class MissingCredentialError extends Error {
   }
 }
 
-/** Thrown when Gemini rejected the credential. */
+/** Thrown when Groq rejected the credential. */
 export class InvalidCredentialError extends Error {
   constructor(detail: string) {
-    super(`Gemini rejected the API key: ${detail}`);
+    super(`Groq rejected the API key: ${detail}`);
     this.name = 'InvalidCredentialError';
   }
 }
@@ -214,12 +231,13 @@ export class ModelRequestError extends Error {
  * ------------------------------------------------------------------ */
 
 /**
- * JSON Schema keywords Gemini's `responseJsonSchema` accepts.
+ * JSON Schema keywords Groq's structured outputs accept.
  *
- * Anything else is dropped rather than sent: an unsupported keyword is at best ignored
- * and at worst rejects the whole request. Note what survives — `minItems`, `maxItems`,
- * `required` and `additionalProperties` all carry through, so most of the Zod
- * constraints reach the model rather than only being checked afterwards.
+ * Groq documents a subset: primitives, `object`, `array`, `enum`, and `anyOf` unions.
+ * Anything outside it is dropped rather than sent, because an unsupported keyword is at
+ * best ignored and at worst rejects the whole request. Note what survives — `required`
+ * and `additionalProperties` carry through, so the shape reaches the model rather than
+ * only being checked afterwards.
  */
 const SUPPORTED_KEYWORDS = new Set([
   '$id',
@@ -227,25 +245,17 @@ const SUPPORTED_KEYWORDS = new Set([
   '$ref',
   '$anchor',
   'type',
-  'format',
   'title',
   'description',
   'enum',
   'items',
-  'prefixItems',
-  'minItems',
-  'maxItems',
-  'minimum',
-  'maximum',
   'anyOf',
-  'oneOf',
   'properties',
   'additionalProperties',
   'required',
-  'propertyOrdering',
 ]);
 
-/** Recursively drops keywords Gemini does not support, e.g. `$schema` and `minLength`. */
+/** Recursively drops keywords Groq does not support, e.g. `$schema` and `minLength`. */
 function pruneUnsupported(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(pruneUnsupported);
   if (node === null || typeof node !== 'object') return node;
@@ -269,13 +279,13 @@ function pruneUnsupported(node: unknown): unknown {
 }
 
 /**
- * A Zod schema as a JSON Schema Gemini will accept.
+ * A Zod schema as a JSON Schema Groq will accept.
  *
- * `reused: 'inline'` keeps repeated sub-schemas expanded in place. Gemini does support
- * `$ref`, but a `$ref` sub-schema may carry no sibling keywords — which would silently
- * drop the field descriptions that carry the per-field instructions.
+ * `reused: 'inline'` keeps repeated sub-schemas expanded in place rather than collapsed
+ * into a `$ref`, because a `$ref` sub-schema may carry no sibling keywords — which would
+ * silently drop the field descriptions that carry the per-field instructions.
  */
-export function toGeminiSchema(schema: z.ZodType): unknown {
+export function toGroqSchema(schema: z.ZodType): unknown {
   return pruneUnsupported(z.toJSONSchema(schema, { io: 'output', reused: 'inline' }));
 }
 
@@ -283,7 +293,7 @@ export function toGeminiSchema(schema: z.ZodType): unknown {
  * The client
  * ------------------------------------------------------------------ */
 
-/** Whether a server-side credential is configured. */
+/** True when a credential is present in the environment. */
 export function hasCredentialEnv(): boolean {
   return (process.env[CREDENTIAL_ENV_VAR] ?? '').trim() !== '';
 }
@@ -308,15 +318,20 @@ function classify(section: BrandStateSection, error: unknown, timeoutMs: number)
   if (error instanceof DOMException && error.name === 'AbortError') {
     return new ModelTimeoutError(section, timeoutMs);
   }
-  if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+  if (
+    error instanceof Error &&
+    (error.name === 'AbortError' ||
+      error.name === 'TimeoutError' ||
+      error.name === 'APIConnectionTimeoutError')
+  ) {
     return new ModelTimeoutError(section, timeoutMs);
   }
 
-  // A transport failure arrives as the bare string "fetch failed", with the real reason
-  // — DNS, TLS, a reset connection — only on `cause`. Unwrapping it here is the
-  // difference between a diagnosable log line and a useless one.
+  // A transport failure arrives as a bare "Connection error" or "fetch failed", with the
+  // real reason — DNS, TLS, a reset connection — only on `cause`. Unwrapping it here is
+  // the difference between a diagnosable log line and a useless one.
   const message = describe(error);
-  // The SDK surfaces the HTTP status in the message and, on ApiError, as a field.
+  // The SDK surfaces the HTTP status as a field on APIError, and otherwise in the text.
   const status =
     typeof (error as { status?: unknown }).status === 'number'
       ? (error as { status: number }).status
@@ -324,7 +339,11 @@ function classify(section: BrandStateSection, error: unknown, timeoutMs: number)
         ? undefined
         : Number(/\b(4\d\d|5\d\d)\b/.exec(message)![1]);
 
-  if (status === 401 || status === 403 || /API[_ ]?key not valid|API key expired|invalid api key/i.test(message)) {
+  if (
+    status === 401 ||
+    status === 403 ||
+    /invalid[_ ]api[_ ]key|API key not valid|invalid authorization/i.test(message)
+  ) {
     return new InvalidCredentialError(message);
   }
 
@@ -343,7 +362,7 @@ const TRANSIENT_BACKOFF_MS = 1000;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class BrandClient {
-  private readonly client: GoogleGenAI;
+  private readonly client: Groq;
   readonly model: string;
   readonly effort: Effort;
   readonly maxTokens: number;
@@ -357,13 +376,8 @@ export class BrandClient {
     }
 
     this.client =
-      options.client ??
-      new GoogleGenAI({ apiKey: (process.env[CREDENTIAL_ENV_VAR] ?? '').trim() });
-    // An explicit option wins; then the env override, which exists so a model can be
-    // swapped — for a quota limit or a deprecation — without editing code; then the
-    // default.
-    const fromEnv = (process.env[MODEL_ENV_VAR] ?? '').trim();
-    this.model = options.model ?? (fromEnv === '' ? DEFAULT_MODEL : fromEnv);
+      options.client ?? new Groq({ apiKey: (process.env[CREDENTIAL_ENV_VAR] ?? '').trim() });
+    this.model = resolveModel(options.model);
     this.effort = options.effort ?? 'high';
     this.maxTokens = options.maxTokens ?? 16000;
     this.timeoutMs = options.timeoutMs ?? 180_000;
@@ -372,10 +386,10 @@ export class BrandClient {
   /**
    * Asks the model for one section, validated against `schema`.
    *
-   * The system instruction is the shared methodology block plus the step's own
-   * instructions. The structured output is requested natively, so the model is
-   * constrained as it generates rather than only checked afterwards — and the result is
-   * still validated with the original Zod schema, which enforces the constraints Gemini
+   * The system message is the shared methodology block plus the step's own instructions.
+   * The structured output is requested natively, so the model is constrained as it
+   * generates rather than only checked afterwards — and the result is still validated
+   * with the original Zod schema, which enforces the constraints the JSON Schema subset
    * does not (string minimums in particular).
    */
   async deriveSection<T>(
@@ -384,7 +398,7 @@ export class BrandClient {
     schema: z.ZodType<T>,
     options: DeriveOptions = {},
   ): Promise<DeriveResult<T>> {
-    const response = await (async () => {
+    const completion = await (async () => {
       // Overload and rate-limit responses say "try again", not "this call is wrong", so
       // they are retried with backoff rather than surfaced. Everything else — a bad key,
       // an unknown model, a refusal — fails on the first attempt, because retrying it
@@ -392,18 +406,37 @@ export class BrandClient {
       let lastError: unknown;
       for (let attempt = 0; attempt < TRANSIENT_ATTEMPTS; attempt++) {
         try {
-          return await this.client.models.generateContent({
-            model: this.model,
-            contents: options.userPrompt ?? buildUserPrompt(section, serializedState),
-            config: {
-              systemInstruction: `${METHODOLOGY}\n\n${options.instructions ?? STEP_INSTRUCTIONS[section]}`,
-              responseMimeType: 'application/json',
-              responseJsonSchema: toGeminiSchema(schema),
-              maxOutputTokens: this.maxTokens,
-              thinkingConfig: { thinkingBudget: THINKING_BUDGET[this.effort] },
-              abortSignal: AbortSignal.timeout(this.timeoutMs),
+          return await this.client.chat.completions.create(
+            {
+              model: this.model,
+              messages: [
+                {
+                  role: 'system',
+                  content: `${METHODOLOGY}\n\n${options.instructions ?? STEP_INSTRUCTIONS[section]}`,
+                },
+                {
+                  role: 'user',
+                  content: options.userPrompt ?? buildUserPrompt(section, serializedState),
+                },
+              ],
+              response_format: {
+                type: 'json_schema',
+                json_schema: {
+                  name: section,
+                  // Best-effort rather than strict: strict mode requires every property
+                  // to be listed in `required`, and several sections have genuinely
+                  // optional fields (a human-set status, an optional confidence). Zod
+                  // stays the authority either way, so a miss is caught and reported
+                  // rather than rendered.
+                  strict: false,
+                  schema: toGroqSchema(schema) as Record<string, unknown>,
+                },
+              },
+              max_completion_tokens: this.maxTokens,
+              reasoning_effort: REASONING_EFFORT[this.effort],
             },
-          });
+            { signal: AbortSignal.timeout(this.timeoutMs) },
+          );
         } catch (error) {
           lastError = classify(section, error, this.timeoutMs);
           const retryable =
@@ -417,32 +450,28 @@ export class BrandClient {
       throw lastError;
     })();
 
-    // A safety filter can block the prompt outright, in which case there are no
-    // candidates at all.
-    const blockReason = response.promptFeedback?.blockReason;
-    if (blockReason !== undefined) {
-      throw new RefusalError(section, blockReason, response.promptFeedback?.blockReasonMessage);
+    const choice = completion.choices?.[0];
+    if (choice === undefined) {
+      throw new ModelRequestError(section, 'the response contained no choices.');
     }
 
-    const candidate = response.candidates?.[0];
-    if (candidate === undefined) {
-      throw new ModelRequestError(section, 'the response contained no candidates.');
+    // A safety filter can stop the response. The SDK's union does not list
+    // `content_filter`, but the OpenAI-compatible API can still return it, so this is
+    // widened rather than trusted. `length` is its own diagnosis: the fix is a bigger
+    // budget, not a retry.
+    const finish: string | undefined = choice.finish_reason;
+    if (finish === 'content_filter') {
+      throw new RefusalError(section, 'content_filter', undefined);
     }
-
-    // Or stop the response part-way. MAX_TOKENS is its own diagnosis: the fix is a
-    // bigger budget, not a retry.
-    if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'PROHIBITED_CONTENT') {
-      throw new RefusalError(section, candidate.finishReason, undefined);
-    }
-    if (candidate.finishReason === 'MAX_TOKENS') {
+    if (finish === 'length') {
       throw new SectionParseError(
         section,
         `the response hit the ${this.maxTokens}-token cap and was cut off. Raise maxTokens or lower effort.`,
       );
     }
 
-    const text = response.text;
-    if (text === undefined || text.trim() === '') {
+    const text = choice.message?.content;
+    if (text === undefined || text === null || text.trim() === '') {
       throw new SectionParseError(section, 'the response was empty.');
     }
 
@@ -456,21 +485,22 @@ export class BrandClient {
       );
     }
 
-    // The original Zod schema is still the authority. Gemini is constrained by the
+    // The original Zod schema is still the authority. The model is constrained by the
     // converted schema, but the converted one loses the string minimums, so this is
     // where "not empty" is actually enforced.
     const result = schema.safeParse(parsed);
     if (!result.success) throw new SchemaValidationError(section, result.error);
 
-    const usage = response.usageMetadata;
+    const usage = completion.usage;
     return {
       value: result.data,
       usage: {
-        inputTokens: usage?.promptTokenCount ?? 0,
-        // Thinking tokens are billed as output, so they belong in the output count.
-        outputTokens: (usage?.candidatesTokenCount ?? 0) + (usage?.thoughtsTokenCount ?? 0),
+        inputTokens: usage?.prompt_tokens ?? 0,
+        // Reasoning tokens are billed as completion tokens and are already counted here.
+        outputTokens: usage?.completion_tokens ?? 0,
+        // Groq does not report prompt caching on the completions API.
         cacheCreationTokens: 0,
-        cacheReadTokens: usage?.cachedContentTokenCount ?? 0,
+        cacheReadTokens: 0,
       },
     };
   }

@@ -96,7 +96,7 @@ Options
   --type <text>       project.productType, for "run".
   --goal <text>       project.goal, for "run".
   --until <section>   Stop after this section, for "run".
-  --model <id>        Default: claude-opus-5
+  --model <id>        Default: $GROQ_MODEL, else openai/gpt-oss-120b
   --effort <level>    low | medium | high | xhigh | max. Default: high
   --max-tokens <n>    Per-call output cap. Default: 16000
   --force             For "step": re-derive a section that is already populated.
@@ -122,7 +122,7 @@ Options
 Sections
   ${SECTION_ORDER.join(', ')}
 
-The model API key resolves from GEMINI_API_KEY, which is read server-side only.`;
+The model API key resolves from GROQ_API_KEY, which is read server-side only.`;
 
 const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 

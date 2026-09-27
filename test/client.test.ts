@@ -9,7 +9,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { z } from 'zod';
-import type { GoogleGenAI } from '@google/genai';
+import type Groq from 'groq-sdk';
+import type { Effort } from '../src/client.ts';
 import {
   BrandClient,
   DEFAULT_MODEL,
@@ -19,7 +20,7 @@ import {
   RefusalError,
   SchemaValidationError,
   SectionParseError,
-  toGeminiSchema,
+  toGroqSchema,
 } from '../src/client.ts';
 import { METHODOLOGY, STEP_INSTRUCTIONS } from '../src/prompts.ts';
 import {
@@ -39,36 +40,38 @@ type Captured = Record<string, any>;
 function fakeClient(
   reply: Record<string, unknown> | (() => never),
   captured: Captured[],
-): GoogleGenAI {
+): Groq {
   return {
-    models: {
-      generateContent: async (params: Captured) => {
-        captured.push(params);
-        if (typeof reply === 'function') reply();
-        return reply;
+    chat: {
+      completions: {
+        create: async (params: Captured, requestOptions?: Captured) => {
+          captured.push({ ...params, requestOptions });
+          if (typeof reply === 'function') reply();
+          return reply;
+        },
       },
     },
-  } as unknown as GoogleGenAI;
+  } as unknown as Groq;
 }
 
-/** A well-formed Gemini reply carrying `value` as its JSON text. */
-function geminiReply(value: unknown, overrides: Record<string, unknown> = {}) {
+/** A well-formed Groq reply carrying `value` as its JSON content. */
+function groqReply(value: unknown, overrides: Record<string, unknown> = {}) {
   return {
-    text: JSON.stringify(value),
-    candidates: [{ finishReason: 'STOP' }],
-    usageMetadata: {
-      promptTokenCount: 1200,
-      candidatesTokenCount: 300,
-      thoughtsTokenCount: 40,
-      cachedContentTokenCount: 900,
-    },
+    choices: [{ message: { content: JSON.stringify(value) }, finish_reason: 'stop' }],
+    // Groq bills reasoning tokens inside completion_tokens, so there is one output number.
+    usage: { prompt_tokens: 1200, completion_tokens: 340 },
     ...overrides,
   };
 }
 
+/** A reply whose single choice stopped for `reason`, carrying `content`. */
+function stopped(reason: string, content = '') {
+  return { choices: [{ message: { content }, finish_reason: reason }], usage: {} };
+}
+
 async function derive(
   reply: Record<string, unknown> | (() => never),
-  options: { effort?: 'low' | 'high'; maxTokens?: number } = {},
+  options: { effort?: Effort; maxTokens?: number } = {},
 ) {
   const captured: Captured[] = [];
   const client = new BrandClient({ client: fakeClient(reply, captured), ...options });
@@ -81,16 +84,16 @@ async function derive(
 }
 
 describe('the request BrandClient builds', () => {
-  it('uses the current fast Gemini model by default', async () => {
-    const { request } = await derive(geminiReply(discoverResult));
+  it('uses a Groq production model with structured output by default', async () => {
+    const { request } = await derive(groqReply(discoverResult));
 
-    assert.equal(DEFAULT_MODEL, 'gemini-3.8-flash');
-    assert.equal(request.model, 'gemini-3.8-flash');
+    assert.equal(DEFAULT_MODEL, 'openai/gpt-oss-120b');
+    assert.equal(request.model, 'openai/gpt-oss-120b');
   });
 
-  it('puts the methodology ahead of the step instructions in the system instruction', async () => {
-    const { request } = await derive(geminiReply(discoverResult));
-    const system = request.config.systemInstruction as string;
+  it('puts the methodology ahead of the step instructions in the system message', async () => {
+    const { request } = await derive(groqReply(discoverResult));
+    const system = request.messages[0].content as string;
 
     assert.ok(system.startsWith(METHODOLOGY));
     assert.ok(system.includes(STEP_INSTRUCTIONS.discovery));
@@ -100,33 +103,34 @@ describe('the request BrandClient builds', () => {
   it('sends the same methodology prefix for every section', async () => {
     const captured: Captured[] = [];
     const client = new BrandClient({
-      client: fakeClient(geminiReply(discoverResult), captured),
+      client: fakeClient(groqReply(discoverResult), captured),
     });
 
     await client.deriveSection('discovery', '{"a":1}', DiscoverResultSchema);
     await client.deriveSection('positioning', '{"a":1}', DiscoverResultSchema);
 
+    const systemOf = (c: Captured) => c.messages[0].content as string;
     const prefixOf = (s: string) => s.slice(0, METHODOLOGY.length);
-    assert.equal(
-      prefixOf(captured[0]!.config.systemInstruction),
-      prefixOf(captured[1]!.config.systemInstruction),
-    );
-    assert.notEqual(captured[0]!.config.systemInstruction, captured[1]!.config.systemInstruction);
+    assert.equal(prefixOf(systemOf(captured[0]!)), prefixOf(systemOf(captured[1]!)));
+    assert.notEqual(systemOf(captured[0]!), systemOf(captured[1]!));
   });
 
-  it('carries the state in the user turn, not the system instruction', async () => {
-    const { request } = await derive(geminiReply(discoverResult));
+  it('carries the state in the user turn, not the system message', async () => {
+    const { request } = await derive(groqReply(discoverResult));
 
-    assert.match(request.contents as string, /<brand_state>/);
-    assert.match(request.contents as string, /Derive the `discovery` section/);
-    assert.doesNotMatch(request.config.systemInstruction as string, /<brand_state>/);
+    assert.equal(request.messages[0].role, 'system');
+    assert.equal(request.messages[1].role, 'user');
+    assert.match(request.messages[1].content as string, /<brand_state>/);
+    assert.match(request.messages[1].content as string, /Derive the `discovery` section/);
+    assert.doesNotMatch(request.messages[0].content as string, /<brand_state>/);
   });
 
   it('requests JSON constrained by the section schema', async () => {
-    const { request } = await derive(geminiReply(discoverResult));
+    const { request } = await derive(groqReply(discoverResult));
 
-    assert.equal(request.config.responseMimeType, 'application/json');
-    const schema = request.config.responseJsonSchema as Record<string, any>;
+    assert.equal(request.response_format.type, 'json_schema');
+    assert.equal(request.response_format.json_schema.name, 'discovery');
+    const schema = request.response_format.json_schema.schema as Record<string, any>;
     assert.deepEqual(Object.keys(schema.properties).sort(), [
       'assumptions',
       'constraints',
@@ -144,52 +148,64 @@ describe('the request BrandClient builds', () => {
   });
 
   it('honours an explicit effort and token cap', async () => {
-    const { request } = await derive(geminiReply(discoverResult), {
+    const { request } = await derive(groqReply(discoverResult), {
       effort: 'low',
       maxTokens: 4000,
     });
 
-    assert.equal(request.config.maxOutputTokens, 4000);
-    // `low` disables thinking outright.
-    assert.equal(request.config.thinkingConfig.thinkingBudget, 0);
+    assert.equal(request.max_completion_tokens, 4000);
+    assert.equal(request.reasoning_effort, 'low');
   });
 
-  it('raises the thinking budget with effort', async () => {
-    const low = await derive(geminiReply(discoverResult), { effort: 'low' });
-    const high = await derive(geminiReply(discoverResult), { effort: 'high' });
+  it('maps effort onto the reasoning levels the model accepts', async () => {
+    const low = await derive(groqReply(discoverResult), { effort: 'low' });
+    const high = await derive(groqReply(discoverResult), { effort: 'high' });
 
-    assert.ok(
-      high.request.config.thinkingConfig.thinkingBudget >
-        low.request.config.thinkingConfig.thinkingBudget,
-    );
+    assert.equal(low.request.reasoning_effort, 'low');
+    assert.equal(high.request.reasoning_effort, 'high');
+  });
+
+  it('caps the levels above high at high, which is all the model offers', async () => {
+    for (const effort of ['high', 'xhigh', 'max'] as const) {
+      const { request } = await derive(groqReply(discoverResult), { effort });
+      assert.equal(request.reasoning_effort, 'high', effort);
+    }
   });
 
   it('sends a timeout signal, so a hung call cannot wait forever', async () => {
-    const { request } = await derive(geminiReply(discoverResult));
-    assert.ok(request.config.abortSignal instanceof AbortSignal);
+    const { request } = await derive(groqReply(discoverResult));
+    assert.ok(request.requestOptions.signal instanceof AbortSignal);
   });
 });
 
-describe('the schema Gemini is given', () => {
-  it('drops keywords Gemini does not support', () => {
-    const schema = JSON.stringify(toGeminiSchema(DiscoverResultSchema));
+describe('the schema Groq is given', () => {
+  it('drops keywords Groq does not support', () => {
+    const schema = JSON.stringify(toGroqSchema(DiscoverResultSchema));
 
-    // `$schema` and `minLength` are not in Gemini's supported set; sending them either
-    // does nothing or rejects the request.
+    // `$schema` and `minLength` are outside Groq's documented subset; sending them
+    // either does nothing or rejects the request.
     assert.ok(!schema.includes('$schema'));
     assert.ok(!schema.includes('minLength'));
   });
 
-  it('keeps the keywords Gemini does support, so the constraints reach the model', () => {
-    const schema = JSON.stringify(toGeminiSchema(sectionSchemas.personality));
+  it('keeps the keywords Groq does support, so the shape reaches the model', () => {
+    const schema = JSON.stringify(toGroqSchema(sectionSchemas.personality));
 
-    assert.ok(schema.includes('minItems'), 'array minimums should survive');
     assert.ok(schema.includes('required'), 'required fields should survive');
     assert.ok(schema.includes('description'), 'field guidance should survive');
+    assert.ok(schema.includes('additionalProperties'), 'closed objects should survive');
+  });
+
+  it('drops array minimums, which Zod still enforces after the fact', () => {
+    // Groq's subset does not document `minItems`, so it is pruned rather than sent. The
+    // constraint is not lost — `deriveSection` validates with the original Zod schema,
+    // which is where a short array is actually rejected.
+    const schema = JSON.stringify(toGroqSchema(sectionSchemas.personality));
+    assert.ok(!schema.includes('minItems'));
   });
 
   it('inlines reused sub-schemas, so no field loses its description to a $ref', () => {
-    const schema = JSON.stringify(toGeminiSchema(sectionSchemas.finalBrand));
+    const schema = JSON.stringify(toGroqSchema(sectionSchemas.finalBrand));
 
     // A $ref sub-schema may carry no sibling keywords, which would silently drop the
     // per-field instructions that the descriptions hold.
@@ -219,7 +235,7 @@ describe('the schema Gemini is given', () => {
     );
 
     for (const [section, schema] of Object.entries(modelFacing)) {
-      const properties = (toGeminiSchema(schema) as Record<string, any>).properties as Record<
+      const properties = (toGroqSchema(schema) as Record<string, any>).properties as Record<
         string,
         any
       >;
@@ -234,46 +250,34 @@ describe('the schema Gemini is given', () => {
 
 describe('how BrandClient reads the response', () => {
   it('returns the parsed section and the usage', async () => {
-    const { result } = await derive(geminiReply(discoverResult));
+    const { result } = await derive(groqReply(discoverResult));
 
     assert.equal(result.value.problem, discoverResult.problem);
     assert.deepEqual(result.usage, {
       inputTokens: 1200,
-      // Thinking tokens are billed as output, so they are counted there.
+      // Reasoning tokens are billed inside completion_tokens, so they are already here.
       outputTokens: 340,
+      // Groq does not report prompt caching on the completions API.
       cacheCreationTokens: 0,
-      cacheReadTokens: 900,
+      cacheReadTokens: 0,
     });
   });
 
-  it('reports a blocked prompt as a refusal', async () => {
+  it('reports a response stopped by a content filter as a refusal', async () => {
     await assert.rejects(
-      () =>
-        derive({
-          promptFeedback: { blockReason: 'SAFETY', blockReasonMessage: 'blocked' },
-        }),
+      () => derive(stopped('content_filter')),
       (error: unknown) => {
         assert.ok(error instanceof RefusalError);
-        assert.equal(error.category, 'SAFETY');
+        assert.equal(error.category, 'content_filter');
         return true;
       },
-    );
-  });
-
-  it('reports a response stopped by a safety filter as a refusal', async () => {
-    await assert.rejects(
-      () => derive({ text: '', candidates: [{ finishReason: 'SAFETY' }] }),
-      RefusalError,
     );
   });
 
   it('reports a truncated response instead of parsing half a section', async () => {
     await assert.rejects(
       () =>
-        derive({
-          text: '{"problem":',
-          candidates: [{ finishReason: 'MAX_TOKENS' }],
-        }),
+        derive(stopped('length', '{"problem":')),
       (error: unknown) => {
         assert.ok(error instanceof SectionParseError);
         assert.match(error.message, /cut off/);
@@ -284,7 +288,7 @@ describe('how BrandClient reads the response', () => {
 
   it('reports text that is not JSON as a parse failure', async () => {
     await assert.rejects(
-      () => derive({ text: 'Here is your brand!', candidates: [{ finishReason: 'STOP' }] }),
+      () => derive(stopped('stop', 'Here is your brand!')),
       (error: unknown) => {
         assert.ok(error instanceof SectionParseError);
         assert.ok(!(error instanceof SchemaValidationError));
@@ -296,7 +300,7 @@ describe('how BrandClient reads the response', () => {
 
   it('distinguishes a schema failure from unparseable text, and names the fields', async () => {
     await assert.rejects(
-      () => derive(geminiReply({ problem: '', targetAudience: 'a' })),
+      () => derive(groqReply({ problem: '', targetAudience: 'a' })),
       (error: unknown) => {
         assert.ok(error instanceof SchemaValidationError);
         // Still a SectionParseError, so existing callers keep working.
@@ -310,21 +314,28 @@ describe('how BrandClient reads the response', () => {
 
   it('reports an empty response rather than crashing on undefined text', async () => {
     await assert.rejects(
-      () => derive({ text: '', candidates: [{ finishReason: 'STOP' }] }),
+      () => derive(stopped('stop', '')),
       /was empty/,
     );
   });
 
-  it('reports a missing candidate as an API failure', async () => {
-    await assert.rejects(() => derive({ text: '{}', candidates: [] }), ModelRequestError);
+  it('reports a missing choice as an API failure', async () => {
+    await assert.rejects(() => derive({ choices: [], usage: {} }), ModelRequestError);
+  });
+
+  it('reports null content rather than crashing', async () => {
+    await assert.rejects(
+      () => derive({ choices: [{ message: { content: null }, finish_reason: 'stop' }], usage: {} }),
+      /was empty/,
+    );
   });
 });
 
 describe('how BrandClient reports transport failures', () => {
   it('reports a rejected key distinctly from other failures', async () => {
     const fail = () => {
-      throw Object.assign(new Error('API key not valid. Please pass a valid API key.'), {
-        status: 400,
+      throw Object.assign(new Error('invalid_api_key: the key is not valid'), {
+        status: 401,
       });
     };
 
@@ -361,22 +372,22 @@ describe('how BrandClient reports transport failures', () => {
 
 describe('credential handling', () => {
   it('refuses to construct without a key and without an injected client', () => {
-    const saved = process.env.GEMINI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
+    const saved = process.env.GROQ_API_KEY;
+    delete process.env.GROQ_API_KEY;
     try {
-      assert.throws(() => new BrandClient(), /GEMINI_API_KEY/);
+      assert.throws(() => new BrandClient(), /GROQ_API_KEY/);
     } finally {
-      if (saved !== undefined) process.env.GEMINI_API_KEY = saved;
+      if (saved !== undefined) process.env.GROQ_API_KEY = saved;
     }
   });
 
   it('constructs with an injected client even when no key is set', () => {
-    const saved = process.env.GEMINI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
+    const saved = process.env.GROQ_API_KEY;
+    delete process.env.GROQ_API_KEY;
     try {
-      assert.ok(new BrandClient({ client: fakeClient(geminiReply({}), []) }));
+      assert.ok(new BrandClient({ client: fakeClient(groqReply({}), []) }));
     } finally {
-      if (saved !== undefined) process.env.GEMINI_API_KEY = saved;
+      if (saved !== undefined) process.env.GROQ_API_KEY = saved;
     }
   });
 });

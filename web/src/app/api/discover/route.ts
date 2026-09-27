@@ -83,29 +83,34 @@ export async function POST(request: Request) {
     if (e instanceof RefusalError) {
       return error(502, 'The model declined this request.', e.message)
     }
-    // The key is configured but Gemini rejected it — distinct from no key at all.
+    // The key is configured but Groq rejected it — distinct from no key at all.
     if (e instanceof InvalidCredentialError) {
-      console.error('[brandos] gemini rejected the key')
-      return error(503, 'Gemini rejected the API key. Check GEMINI_API_KEY in web/.env.local.', e.message)
+      console.error('[brandos] groq rejected the key')
+      return error(503, 'Groq rejected the API key. Check GROQ_API_KEY in web/.env.local.', e.message)
     }
     if (e instanceof MissingCredentialError) {
       return error(503, e.message)
     }
     // Took too long. The user's answers are kept, so retrying is safe.
     if (e instanceof ModelTimeoutError) {
-      return error(504, 'Gemini took too long to answer. Your answers are kept — try again.', e.message)
+      return error(504, 'The model took too long to answer. Your answers are kept — try again.', e.message)
     }
     // Valid JSON, wrong shape. Checked before SectionParseError, which it extends.
     if (e instanceof SchemaValidationError) {
-      return error(502, 'Gemini returned JSON that does not match the discovery schema.', e.issues)
+      return error(502, 'The model returned JSON that does not match the discovery schema.', e.issues)
     }
     // Not JSON at all, or cut off.
     if (e instanceof SectionParseError) {
       return error(502, 'The model returned something unexpected. Try again.', e.message)
     }
-    // Rate limit, server error, network.
+    // A rate limit is its own diagnosis: the remedy is to wait or change model, not to
+    // retry immediately, so it must not hide behind a generic "unavailable".
+    if (e instanceof ModelRequestError && e.status === 429) {
+      return error(429, 'Groq rate limit or quota reached. Wait, or set GROQ_MODEL to another model.', e.message)
+    }
+    // Server error or network. The provider's own message is carried in `detail`.
     if (e instanceof ModelRequestError) {
-      return error(502, 'Gemini is unavailable right now. Try again.', e.message)
+      return error(502, 'The Groq request failed.', e.message)
     }
 
     const detail = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
