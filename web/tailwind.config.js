@@ -76,12 +76,22 @@ module.exports = {
           from: { transform: 'translateX(-100%)' },
           to: { transform: 'translateX(350%)' },
         },
+        // The AI reasoning column arriving: it grows in from the right edge (so the main
+        // panel narrows smoothly instead of snapping), overshoots left, and settles.
+        'reasoning-in': {
+          '0%': { width: '0', minWidth: '0', opacity: '0', transform: 'translateX(80px)' },
+          '55%': { width: '29.5%', minWidth: '300px', opacity: '1', transform: 'translateX(-16px)' },
+          '72%': { transform: 'translateX(7px)' },
+          '86%': { transform: 'translateX(-3px)' },
+          '100%': { width: '29.5%', minWidth: '300px', opacity: '1', transform: 'translateX(0)' },
+        },
       },
       animation: {
         draw: 'draw 1.6s 0.4s cubic-bezier(.6,0,.2,1) both',
         wiggle: 'wiggle 0.9s cubic-bezier(.3,1.6,.5,1)',
         bob: 'bob 3.2s ease-in-out infinite',
         sweep: 'sweep 1.4s cubic-bezier(.6,0,.2,1) infinite',
+        'reasoning-in': 'reasoning-in 0.85s cubic-bezier(.25,.8,.35,1) both',
         'spin-slow': 'spin 22s linear infinite',
         'spin-slower': 'spin 36s linear infinite reverse',
       },
