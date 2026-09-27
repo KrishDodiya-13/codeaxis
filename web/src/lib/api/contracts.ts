@@ -16,6 +16,9 @@ import type {
   BrandOs,
   BrandState,
   Consistency,
+  Naming,
+  Personality,
+  Voice,
   ConsistencyDimension,
   ConsistencyFinding,
   DimensionEvaluation,
@@ -400,6 +403,47 @@ export type CompileBrandOsResponse = {
   project: ProjectSummary;
 };
 
+/* ------------------------------------------------------------------ *
+ * POST /api/projects/:id/identity
+ * ------------------------------------------------------------------ */
+
+export const RunIdentityBody = z
+  .object({
+    /** Re-derive over an existing identity. Required once one exists. */
+    regenerate: z.boolean().optional(),
+  })
+  .strict();
+
+export type RunIdentityRequest = z.infer<typeof RunIdentityBody>;
+
+export type RunIdentityResponse = {
+  personality: Personality;
+  /** Candidates only — selecting a name is a separate, human act. */
+  naming: Naming;
+  voice: Voice;
+  project: ProjectSummary;
+};
+
+/* ------------------------------------------------------------------ *
+ * POST /api/projects/:id/name
+ * ------------------------------------------------------------------ */
+
+export const SelectNameBody = z
+  .object({
+    /** One of `naming.candidates[].name`. Case-insensitive. */
+    name: z.string().trim().min(1),
+    /** One of `naming.tagline.candidates`. Case-insensitive. */
+    tagline: z.string().trim().min(1),
+  })
+  .strict();
+
+export type SelectNameRequest = z.infer<typeof SelectNameBody>;
+
+export type SelectNameResponse = {
+  naming: Naming;
+  project: ProjectSummary;
+};
+
 export const API_ERROR_CODES = [
   'invalid_request',
   'not_found',
@@ -413,6 +457,8 @@ export const API_ERROR_CODES = [
   'findings_unauditable',
   'consistency_findings_uncheckable',
   'strategy_not_selected',
+  'name_not_offered',
+  'identity_not_derived',
   'visual_would_be_orphaned',
   'selection_would_be_orphaned',
   'directions_not_distinct',

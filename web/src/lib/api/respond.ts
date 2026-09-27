@@ -14,6 +14,7 @@ import {
   InvalidCredentialError,
   MissingCredentialError,
   MockFixtureError,
+  NameNotOfferedError,
   ModelRequestError,
   QuotaExceededError,
   resolveAiMode,
@@ -252,6 +253,13 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
     }
     if (error instanceof SectionParseError) {
       return fail(502, 'model_output_invalid', error.message, { retryable: true });
+    }
+    if (error instanceof NameNotOfferedError) {
+      // A name that was never a candidate cannot be selected: the deliverable would then
+      // present a decision nothing in the pipeline reasoned about.
+      return fail(400, 'name_not_offered', error.message, {
+        details: { offered: error.offered },
+      });
     }
     if (error instanceof QuotaExceededError) {
       // Not retryable, and deliberately not reported as a rate limit: waiting does not

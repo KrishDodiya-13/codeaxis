@@ -12,8 +12,10 @@
  * (`BrandClient`, `deriveSection`, `DeriveOptions`, `Usage`, `SectionParseError`,
  * `RefusalError`, `Effort`) is unchanged for the same reason.
  */
+import { performance } from 'node:perf_hooks';
 import Groq from 'groq-sdk';
 import { z } from 'zod';
+import { recordTiming } from './instrument.ts';
 import { METHODOLOGY, STEP_INSTRUCTIONS, buildUserPrompt } from './prompts.ts';
 import type { BrandStateSection } from './types.ts';
 
@@ -521,6 +523,66 @@ export class BrandClient {
     schema: z.ZodType<T>,
     options: DeriveOptions = {},
   ): Promise<DeriveResult<T>> {
+    // Timing is taken here rather than around the call, because validation happens
+    // inside this method and the contract asks for it separately.
+    const requestStart = new Date();
+    const t0 = performance.now();
+    let modelMs = 0;
+    let validationMs = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    const emit = (ok: boolean, errorKind?: string) => {
+      recordTiming({
+        section,
+        mode: 'live',
+        requestStart: requestStart.toISOString(),
+        responseComplete: new Date().toISOString(),
+        modelMs: +modelMs.toFixed(1),
+        validationMs: +validationMs.toFixed(3),
+        totalMs: +(performance.now() - t0).toFixed(1),
+        inputTokens,
+        outputTokens,
+        ok,
+        // The class name only. A message can quote the prompt, which must not be logged.
+        ...(errorKind === undefined ? {} : { errorKind }),
+      });
+    };
+
+    try {
+      return await this.deriveSectionInner(section, serializedState, schema, options, {
+        setModelMs: (ms) => {
+          modelMs = ms;
+        },
+        setValidationMs: (ms) => {
+          validationMs = ms;
+        },
+        setTokens: (input, output) => {
+          inputTokens = input;
+          outputTokens = output;
+        },
+        done: () => emit(true),
+      });
+    } catch (error) {
+      emit(false, error instanceof Error ? error.name : 'Unknown');
+      throw error;
+    }
+  }
+
+  /** The call itself. Split out so the public method owns only the measurement. */
+  private async deriveSectionInner<T>(
+    section: BrandStateSection,
+    serializedState: string,
+    schema: z.ZodType<T>,
+    options: DeriveOptions,
+    probe: {
+      setModelMs: (ms: number) => void;
+      setValidationMs: (ms: number) => void;
+      setTokens: (input: number, output: number) => void;
+      done: () => void;
+    },
+  ): Promise<DeriveResult<T>> {
+    const modelStart = performance.now();
     const completion = await (async () => {
       // Overload and rate-limit responses say "try again", not "this call is wrong", so
       // they are retried with backoff rather than surfaced. Everything else — a bad key,
@@ -609,6 +671,8 @@ export class BrandClient {
       throw lastError;
     })();
 
+    probe.setModelMs(performance.now() - modelStart);
+
     const choice = completion.choices?.[0];
     if (choice === undefined) {
       throw new ModelRequestError(section, 'the response contained no choices.');
@@ -647,10 +711,15 @@ export class BrandClient {
     // The original Zod schema is still the authority. The model is constrained by the
     // converted schema, but the converted one loses the string minimums, so this is
     // where "not empty" is actually enforced.
+    const validationStart = performance.now();
     const result = schema.safeParse(parsed);
+    probe.setValidationMs(performance.now() - validationStart);
     if (!result.success) throw new SchemaValidationError(section, result.error);
 
     const usage = completion.usage;
+    probe.setTokens(usage?.prompt_tokens ?? 0, usage?.completion_tokens ?? 0);
+    probe.done();
+
     return {
       value: result.data,
       usage: {

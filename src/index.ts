@@ -260,6 +260,18 @@ export type { AiMode, CreateDeriverOptions } from './provider.ts';
 export { MockDeriver, MockFixtureError } from './mock/deriver.ts';
 export type { MockDeriverOptions } from './mock/deriver.ts';
 
+export {
+  clearTimings,
+  liveTimings,
+  onTiming,
+  recordTiming,
+  summarizeTimings,
+  timings,
+} from './instrument.ts';
+export type { StageTiming, TimingMode, TimingSummary } from './instrument.ts';
+
+export { NameNotOfferedError, selectName } from './naming.ts';
+
 export { CachingDeriver, DeriverCache } from './cache.ts';
 export type { CacheScope, CacheStats, DeriverCacheOptions } from './cache.ts';
 

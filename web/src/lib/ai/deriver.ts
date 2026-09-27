@@ -11,7 +11,15 @@
  * scope is in the key so two projects can never collide. The cache decides only whether
  * work can be skipped, never who may see a result.
  */
-import { CachingDeriver, DeriverCache, createDeriver, resolveAiMode } from 'brandstate';
+import {
+  CachingDeriver,
+  DeriverCache,
+  createDeriver,
+  onTiming,
+  resolveAiMode,
+  summarizeTimings,
+  timings,
+} from 'brandstate';
 import type { BrandState, SectionDeriver } from 'brandstate';
 
 /**
@@ -32,12 +40,37 @@ if (process.env.NODE_ENV !== 'production') globalForCache.brandosCache = deriver
 let modeAnnounced = false;
 
 /**
+ * Registers the timing log once.
+ *
+ * One line per stage, carrying durations and token counts and nothing else — no key, no
+ * prompt, no model output. Live timings are the useful ones, so a mock timing is marked
+ * as such rather than left to look like an AI latency.
+ */
+let timingWired = false;
+
+function wireTiming(): void {
+  if (timingWired) return;
+  timingWired = true;
+
+  onTiming((timing) => {
+    const tokens = timing.mode === 'live' ? ` tokens=${timing.inputTokens}/${timing.outputTokens}` : '';
+    console.info(
+      `[brandos] stage=${timing.section} mode=${timing.mode} ` +
+        `total=${timing.totalMs}ms model=${timing.modelMs}ms zod=${timing.validationMs}ms` +
+        `${tokens} ok=${timing.ok}${timing.errorKind === undefined ? '' : ` error=${timing.errorKind}`}`,
+    );
+  });
+}
+
+/**
  * The deriver for one project's stage call.
  *
  * Caching is on by default and can be turned off per call — a regenerate is an explicit
  * request for a different answer, so serving the previous one would ignore the user.
  */
 export function deriverFor(state: BrandState, options: { cache?: boolean } = {}): SectionDeriver {
+  wireTiming();
+
   const inner = createDeriver({
     onMode: (message) => {
       if (modeAnnounced) return;
@@ -60,4 +93,14 @@ export function deriverFor(state: BrandState, options: { cache?: boolean } = {})
 /** The configured mode, for a health or diagnostics response. */
 export function aiMode() {
   return resolveAiMode();
+}
+
+/**
+ * Stage timings held by this process.
+ *
+ * Live-only by default: a mock timing measures fixture lookup, so averaging it with a
+ * real call would describe neither. Pass 'all' to see both.
+ */
+export function stageTimings(mode: 'live' | 'mock' | 'all' = 'live') {
+  return { summary: summarizeTimings(mode), samples: timings().length };
 }

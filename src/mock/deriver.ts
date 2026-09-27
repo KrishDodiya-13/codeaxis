@@ -16,8 +16,10 @@
  *     with different schemas (`strategyOptions` batch vs. single, `finalBrand` compile vs.
  *     lock), so the candidate that actually parses is the one returned.
  */
+import { performance } from 'node:perf_hooks';
 import type { z } from 'zod';
 import type { DeriveOptions, DeriveResult, SectionDeriver, Usage } from '../client.ts';
+import { recordTiming } from '../instrument.ts';
 import type { BrandStateSection } from '../types.ts';
 import {
   brandOsDraft,
@@ -144,20 +146,50 @@ export class MockDeriver implements SectionDeriver {
   ): Promise<DeriveResult<T>> {
     this.calls.push({ section, userPrompt: options.userPrompt });
 
+    // Recorded like a live stage, but tagged `mock`. A mock timing measures fixture
+    // lookup and validation, never AI latency, and the tag is what keeps the two from
+    // being averaged together into a number that describes neither.
+    const requestStart = new Date();
+    const t0 = performance.now();
+
+    const emit = (validationMs: number, ok: boolean, errorKind?: string) => {
+      recordTiming({
+        section,
+        mode: 'mock',
+        requestStart: requestStart.toISOString(),
+        responseComplete: new Date().toISOString(),
+        modelMs: 0,
+        validationMs: +validationMs.toFixed(3),
+        totalMs: +(performance.now() - t0).toFixed(1),
+        inputTokens: ok ? MOCK_USAGE.inputTokens : 0,
+        outputTokens: ok ? MOCK_USAGE.outputTokens : 0,
+        ok,
+        ...(errorKind === undefined ? {} : { errorKind }),
+      });
+    };
+
     if (this.latencyMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, this.latencyMs));
     }
 
     const issues: string[] = [];
+    let validationMs = 0;
     for (const candidate of candidatesFor(section)) {
       // The caller's own schema is the judge, exactly as in live mode. A fixture that no
       // longer fits is a failure here rather than a surprise three stages later.
+      const validationStart = performance.now();
       const parsed = schema.safeParse(candidate);
-      if (parsed.success) return { value: parsed.data, usage: MOCK_USAGE };
+      validationMs += performance.now() - validationStart;
+
+      if (parsed.success) {
+        emit(validationMs, true);
+        return { value: parsed.data, usage: MOCK_USAGE };
+      }
 
       issues.push(parsed.error.issues.map((issue) => issue.path.join('.') || '(root)').join(','));
     }
 
+    emit(validationMs, false, 'MockFixtureError');
     throw new MockFixtureError(section, issues.length > 0 ? issues : ['no candidate defined']);
   }
 }
