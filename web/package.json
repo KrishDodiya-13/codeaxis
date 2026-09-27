@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"for (const d of ['.next','.next-dev']) require('fs').rmSync(d,{recursive:true,force:true})\""
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

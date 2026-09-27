@@ -212,8 +212,16 @@ const visualDirection: VisualDirection = {
   typography: 'A grotesque for interface text, paired with a monospace for delivery data.',
   imagery: 'Interface detail and real delivery records, no stock photography of teams.',
   shapes: 'Tight grid, square corners, dense tables.',
+  composition:
+    'Weight sits top-left on the record itself; generous margin around a dense centre so the data reads as the subject. The eye meets the pattern first, the claim second.',
+  visualPersonality:
+    'Exacting is carried by the tight grid and square corners; plain-spoken by the single ink colour and absence of decoration; steady by the unhurried margin rather than by warmth.',
   mood: 'The calm of a system that already knows the answer.',
   avoid: ['Hustle-culture warmth', 'Gradients standing in for depth'],
+  rationale: [
+    'Ink over brighter colour because the personality is exacting and the audience abandoned a livelier tool once already',
+    'Dense tables because the TRUST direction rests on showing the delivery record itself, not a summary of it',
+  ],
 };
 
 /**
@@ -319,7 +327,10 @@ const stressTests: StressTest[] = [
     impact:
       'Onboarding copy written to reassure a cautious owner will read as cold next to marketing that promises nothing is invented, and readers will not know which brand they are dealing with.',
     recommendation:
-      'Add a warmth trait to shape.personality that survives the exacting register, such as "steady", or revisit whether TRUST is the right direction given the voice already drafted.',
+      'Add a warmth trait to personality.traits that survives the exacting register, such as "steady", or revisit whether TRUST is the right direction given the voice already drafted.',
+    alternative:
+      'Keep the personality exactly as it is and change the chosen direction instead — COMPETITION fits an unsentimental voice without asking it to reassure anyone.',
+    affectedDecision: 'personality',
   },
   {
     type: 'differentiation',
@@ -332,6 +343,9 @@ const stressTests: StressTest[] = [
       'An agency comparing two tools side by side next year may see no reason to choose this one, which erodes the competitive angle after launch rather than at launch.',
     recommendation:
       'Rewrite positioning.differentiator around the pattern the tool finds in the record, not the fact that it reads the record at all.',
+    alternative:
+      'Accept that the capability is copyable and move the defensibility into the delivery record a customer has already accumulated, which a new entrant cannot import.',
+    affectedDecision: 'differentiator',
   },
   {
     type: 'cliché',
@@ -343,6 +357,9 @@ const stressTests: StressTest[] = [
       'A designer reading only this line has nothing specific to reach for, so the visual work will drift toward generic enterprise minimalism.',
     recommendation:
       'Rewrite visualDirection.mood around what the agency owner feels on seeing their own repeated work named back to them.',
+    alternative:
+      'Leave the mood line and let visualPersonality carry the specificity instead, since that field already maps the traits to real decisions.',
+    affectedDecision: 'visualDirection',
   },
 ];
 

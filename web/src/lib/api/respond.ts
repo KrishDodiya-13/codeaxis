@@ -8,8 +8,14 @@
  * error becomes a generic 500 with the detail logged rather than returned.
  */
 import { NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 import {
+  InvalidCredentialError,
+  MissingCredentialError,
+  ModelRequestError,
+  ModelTimeoutError,
+  SchemaValidationError,
   BattleInputError,
   DiscoveryIncompleteError,
   IndistinctStrategiesError,
@@ -21,6 +27,7 @@ import {
   VagueCategoryError,
 } from 'brandstate';
 import type { ApiErrorBody, ApiErrorCode } from '@/lib/api/contracts';
+import { credentialProblem } from '@/lib/api/credentials';
 import { CorruptBrandStateError, ProjectNotFoundError } from '@/lib/db/projects';
 
 export function ok<T>(body: T, status = 200): NextResponse<T> {
@@ -34,6 +41,25 @@ export function fail(
   extra: { details?: unknown; retryable?: boolean } = {},
 ): NextResponse<ApiErrorBody> {
   return NextResponse.json({ error, code, ...extra }, { status });
+}
+
+/** True in development, where the real cause is worth more than hiding it. */
+const isDev = process.env.NODE_ENV !== 'production';
+
+/**
+ * The line of a Prisma message that actually says what went wrong.
+ *
+ * Prisma leads with an "Invalid `prisma.x.y()` invocation:" header, which names the
+ * call rather than the cause — surfacing that would point a reader at the wrong thing.
+ * The real reason is the first line after it.
+ */
+function causeLine(message: string): string {
+  const lines = message
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !/invocation:$/.test(line));
+
+  return lines[0] ?? message;
 }
 
 /** Formats a Zod error as field paths, which is what a form needs to highlight. */
@@ -141,7 +167,27 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
     /* ---- the model did not produce something usable ---- */
 
     if (error instanceof RefusalError) {
-      return fail(502, 'model_refused', error.message, { retryable: true });
+      // A safety filter declined. Hammering the same button will not help.
+      return fail(502, 'model_refused', error.message, { retryable: false });
+    }
+    if (error instanceof MissingCredentialError) {
+      return fail(503, 'upstream_unavailable', error.message, { retryable: false });
+    }
+    if (error instanceof InvalidCredentialError) {
+      // Distinct from "no key": the key is present and Gemini rejected it.
+      console.error('[brandos] gemini rejected the key');
+      return fail(503, 'model_key_invalid', error.message, { retryable: false });
+    }
+    if (error instanceof ModelTimeoutError) {
+      return fail(504, 'model_timeout', error.message, { retryable: true });
+    }
+    if (error instanceof SchemaValidationError) {
+      // The model answered in JSON but not in the required shape. Checked before
+      // SectionParseError, which it extends.
+      return fail(502, 'model_schema_invalid', error.message, {
+        details: { issues: error.issues },
+        retryable: true,
+      });
     }
     if (error instanceof VagueCategoryError) {
       return fail(502, 'model_output_invalid', error.message, {
@@ -159,6 +205,49 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
     }
     if (error instanceof SectionParseError) {
       return fail(502, 'model_output_invalid', error.message, { retryable: true });
+    }
+    if (error instanceof ModelRequestError) {
+      // Rate limit, server error, network. Worth retrying.
+      return fail(502, 'model_unavailable', error.message, { retryable: true });
+    }
+
+    /* ---- the database ---- */
+
+    // Prisma cannot reach or authenticate against the database. Without the real
+    // message this arrives as a bare 500, which says nothing a developer can act on —
+    // and bad credentials and a missing database look identical from the outside.
+    if (error instanceof Prisma.PrismaClientInitializationError) {
+      console.error('[brandos] database unavailable', error.message);
+      return fail(
+        503,
+        'database_unavailable',
+        isDev
+          ? `The database is not reachable: ${causeLine(error.message)} Check DATABASE_URL in web/.env.local.`
+          : 'The database is not reachable.',
+        { retryable: false },
+      );
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      // P2021: the table does not exist, i.e. the migration has never been run. This is
+      // the next thing a correctly-configured clone hits, so it gets the command.
+      if (error.code === 'P2021' || error.code === 'P2022') {
+        console.error('[brandos] schema not migrated', error.message);
+        return fail(
+          503,
+          'database_not_migrated',
+          'The database has no BRANDOS tables yet. Run `npx prisma migrate dev` in web/, then retry.',
+          { retryable: false },
+        );
+      }
+      // P2025: an operation expected a row that is not there.
+      if (error.code === 'P2025') {
+        return fail(404, 'not_found', 'That project no longer exists.');
+      }
+      console.error('[brandos] database error', error.code, error.message);
+      return fail(500, 'internal_error', isDev ? `Database error ${error.code}.` : 'Something went wrong.', {
+        retryable: true,
+      });
     }
 
     /* ---- ours ---- */
@@ -184,16 +273,11 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
 
 /** A guard for routes that need a configured model credential. */
 export function requireModelCredentials(): void {
-  const configured =
-    (process.env.ANTHROPIC_API_KEY ?? '') !== '' || (process.env.ANTHROPIC_AUTH_TOKEN ?? '') !== '';
-
-  if (!configured) {
-    // Fails before the stage runs, so the message names the cause instead of surfacing
-    // an SDK error from three layers down.
-    throw new UpstreamUnavailableError(
-      'No model credential is configured on the server. Set ANTHROPIC_API_KEY.',
-    );
-  }
+  // Fails before the stage runs, so the message names the cause instead of surfacing an
+  // SDK error from three layers down. The check itself lives in one place, shared with
+  // /api/discover, so the routes cannot disagree about what counts as configured.
+  const problem = credentialProblem();
+  if (problem !== null) throw new UpstreamUnavailableError(problem);
 }
 
 /** Thrown when a dependency the server needs is not configured or reachable. */

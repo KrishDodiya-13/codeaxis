@@ -237,11 +237,19 @@ Cite the exact BrandState field paths that triggered the flag: \`discovery.targe
 
 **recommendation** is something a person could do tomorrow, naming the field and roughly the change. Not "make the differentiator stronger".
 
+**alternative** is a genuinely different route, not the recommendation reworded. If the fix is to soften a claim, the alternative might be to keep the claim and narrow who it is aimed at instead. Where there honestly is only one sensible route, say what accepting the finding unchanged would cost — that is still a real choice, and the reader deserves to see it priced.
+
+**affectedDecision** names the single decision that would have to change, using one of: audience, problem, positioning, valueProposition, differentiator, personality, principles, namingDirection, voice, visualDirection, selectedStrategy. Pick the one that moves, not everything the issue touches — this is what lets the tool show which part of the brand a finding puts in question.
+
 ## Do not manufacture findings
 
 An empty findings list is a valid and good result. A brand without a cliché problem should produce zero cliché findings. Padding the output with nitpicks to look thorough defeats the entire purpose of the step — it trains the reader to skim past your findings, including the real ones.
 
-Equally, do not soften a real problem to be agreeable. If the differentiator is not differentiated, say so at the severity it deserves.
+Equally, do not soften a real problem to be agreeable. Your job here is to challenge the strategy, not to validate it. If the differentiator is not differentiated, say so at the severity it deserves. A stress test that returns nothing on every run is not a careful stress test; it is a broken one.
+
+## Say so when a test passes
+
+For every test you were asked to run, report in evaluatedTypes whether you could run it. A test that ran properly and found nothing genuine is a **pass**, and that is worth stating plainly — silence is indistinguishable from not having looked. Do not invent a token low-severity finding just so a test has something to show.
 
 ## Severity
 
@@ -310,14 +318,36 @@ Out of scope: no colors, no typography, no tone-of-voice rules.`,
 
   visualDirection: `# This step: visual direction
 
-Translate the positioning and personality into a visual system. This is a brief a designer could act on, not a mood description.
+Translate the approved strategy and the personality into a visual system. This is a brief a designer could act on, not a mood description.
 
-- colors: named colors with hex values and the role each plays, e.g. "Ink #12141A — primary text". Choose colors the personality justifies, and expect to defend the choice.
-- typography: a concrete direction with real typeface suggestions and why they fit the voice.
-- imagery: what the imagery shows, and how it is treated. "Photography" is not a direction; "unstyled workshop photography, available light, hands in frame" is.
+## Every choice must trace to a decision already made
+
+This is the rule for this step. You are not expressing taste; you are translating decisions that have already been approved and stress-tested. Before you write any visual choice, know which of these it comes from:
+
+- a personality trait or anti-trait
+- the chosen strategy's core idea, positioning or audience fit
+- the positioning's category or differentiator
+- something concrete about the audience in discovery
+
+A palette chosen because it looks good, a typeface chosen because it is current, a shape language chosen because it is clean — these are the failure mode. If you cannot name what a choice comes from, it does not belong in the brief.
+
+Two specific traps:
+- **Do not default to the category's look.** "Fintech blue", "SaaS gradient", "wellness sage" are what every competitor already does, which makes them the opposite of a differentiator. If the positioning says the brand stands apart, the visual system cannot look like the category average.
+- **Do not contradict the personality.** A brand whose anti-traits include "motivational" cannot have an energetic upward-arrow mark. Read the anti-traits as hard constraints, because that is what they are for.
+
+## The fields
+
+- colors: named colors with a hex value, the role each plays, and the trait each carries — "Ink #12141A — primary text, carries the exacting trait". Expect to defend every one.
+- typography: concrete typeface suggestions, and what about the voice or personality each serves. A typeface name with no reason is not a direction.
+- imagery: what the imagery shows and how it is treated. "Photography" is not a direction; "unstyled workshop photography, available light, hands in frame" is. Say which trait the treatment expresses.
 - shapes: geometry, corner treatment, density, grid behaviour.
-- mood: the feeling the system produces when someone lands on it for the first time.
-- avoid: the visual choices that would misrepresent this brand specifically. Generic warnings are wasted space — name the tempting mistake for this brand, the thing a designer would reach for by default and get wrong.`,
+- composition: how the page is arranged — where the weight sits, how much whitespace, how dense, what the eye meets first and second. A layout instruction, not an adjective.
+- visualPersonality: the explicit mapping from personality traits to visual decisions. Name the real traits from the personality section and say which decision carries each. If a trait has no visual expression, say that too — it is a gap worth seeing.
+- mood: the feeling the system produces on first sight.
+- avoid: the visual choices that would misrepresent this brand specifically. Name the tempting mistake — what a designer would reach for by default here and get wrong. Generic warnings waste the field.
+- rationale: at least two lines, each citing what the choice follows from. "Ink and bone over brighter colour because the personality is exacting and the audience was burned by a livelier tool" traces. "A modern, clean palette" does not.
+
+Out of scope: no names, no taglines, no copy. Those are decided elsewhere.`,
 
   voice: `# This step: voice
 

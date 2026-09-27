@@ -26,7 +26,7 @@
     "web:build": "npm --prefix web run build"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.128.0",
+    "@google/genai": "^2.24.0",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.1",
     "@react-three/rapier": "^2.2.0",

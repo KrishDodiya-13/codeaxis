@@ -426,7 +426,7 @@ describe('POST /api/stress-test', () => {
 
     assert.equal(status, 200);
     assert.ok(Array.isArray(json.tests));
-    assert.deepEqual(Object.keys(json).sort(), ['evaluatedTypes', 'summary', 'tests']);
+    assert.deepEqual(Object.keys(json).sort(), ['evaluatedTypes', 'reports', 'summary', 'tests']);
   });
 
   it('computes the summary and the gate from the findings', async () => {

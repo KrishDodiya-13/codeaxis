@@ -12,6 +12,7 @@
  */
 import { z } from 'zod';
 import type {
+  BrandDna,
   BrandState,
   Direction,
   Discovery,
@@ -19,6 +20,11 @@ import type {
   PositionResponse,
   SelectedStrategy,
   StrategyOption,
+  StressSummary,
+  StressTest,
+  TestReport,
+  TestType,
+  VisualDirection,
 } from 'brandstate';
 
 /** Every stage a project can be at. Mirrors the Prisma `ProjectStatus` enum. */
@@ -191,6 +197,92 @@ export type SelectStrategyResponse = {
 export type { Direction, StrategyOption, SelectedStrategy };
 
 /* ------------------------------------------------------------------ *
+ * POST /api/projects/:id/visualize
+ * ------------------------------------------------------------------ */
+
+export const RunVisualizeBody = z
+  .object({
+    /** Re-run over an existing visual direction. Required once one exists. */
+    regenerate: z.boolean().optional(),
+  })
+  .strict();
+
+export type RunVisualizeRequest = z.infer<typeof RunVisualizeBody>;
+
+export type RunVisualizeResponse = {
+  visualDirection: VisualDirection;
+  project: ProjectSummary;
+};
+
+/* ------------------------------------------------------------------ *
+ * POST /api/projects/:id/stress-test
+ * ------------------------------------------------------------------ */
+
+/** The five tests. Mirrors the engine's `TEST_TYPES`. */
+export const TEST_TYPE_NAMES = [
+  'cliché',
+  'audienceMismatch',
+  'differentiation',
+  'contradiction',
+  'messaging',
+] as const;
+
+/**
+ * A test-type name, accepted in either Unicode normalisation.
+ *
+ * `cliché` is the one name with a non-ASCII character, and it has two valid encodings:
+ * precomposed `é` (U+00E9) and decomposed `e` + combining acute. A client on macOS can
+ * easily send the second, and without this the rejection reads "expected one of cliché…"
+ * against an input that looks identical — which is impossible to debug from the message.
+ */
+const TestTypeName = z
+  .string()
+  .transform((value) => value.normalize('NFC'))
+  .pipe(z.enum(TEST_TYPE_NAMES));
+
+export const RunStressTestBody = z
+  .object({
+    /**
+     * Restrict to specific tests, for a cheap re-check after one edit.
+     *
+     * A scoped run replaces only the findings for the types it covered, so decisions
+     * already recorded against the other types survive.
+     */
+    scope: z.array(TestTypeName).min(1).optional(),
+  })
+  .strict();
+
+export type RunStressTestRequest = z.infer<typeof RunStressTestBody>;
+
+export type RunStressTestResponse = {
+  /** Every finding, each with all seven fields. Empty is a good result. */
+  tests: StressTest[];
+  /** Counts by severity and by status, plus the finalization gate. */
+  summary: StressSummary;
+  /** One entry per test run, stating explicitly whether it found anything. */
+  reports: TestReport[];
+  /** The findings still open at critical or high, which block finalization. */
+  blocking: StressTest[];
+  project: ProjectSummary;
+};
+
+/* ------------------------------------------------------------------ *
+ * GET /api/projects/:id/dna
+ * ------------------------------------------------------------------ */
+
+export type GetBrandDnaResponse = {
+  /** Derived from the state on every read, never stored, so it cannot go stale. */
+  dna: BrandDna;
+  /** The still-open fields, with why, for the "what is left" panel. */
+  gaps: Array<{ field: string; reason: string }>;
+  complete: boolean;
+  project: ProjectSummary;
+};
+
+/** Re-exported so the frontend types these without importing the engine. */
+export type { BrandDna, VisualDirection, StressTest, StressSummary, TestReport, TestType };
+
+/* ------------------------------------------------------------------ *
  * Errors
  * ------------------------------------------------------------------ */
 
@@ -216,11 +308,21 @@ export const API_ERROR_CODES = [
   'discovery_incomplete',
   'positioning_not_ready',
   'battle_not_run',
+  'stress_test_not_ready',
+  'findings_unauditable',
+  'strategy_not_selected',
+  'visual_would_be_orphaned',
   'selection_would_be_orphaned',
   'directions_not_distinct',
   'model_refused',
   'model_output_invalid',
+  'model_schema_invalid',
+  'model_key_invalid',
+  'model_timeout',
+  'model_unavailable',
   'upstream_unavailable',
+  'database_unavailable',
+  'database_not_migrated',
   'internal_error',
 ] as const;
 

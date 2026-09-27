@@ -384,7 +384,7 @@ describe('missingSections', () => {
   it('names the sections not derived yet', () => {
     const state = completeState();
     state.personality = { traits: [], antiTraits: [], values: [], rationale: [] };
-    state.visualDirection = { colors: [], typography: '', imagery: '', shapes: '', mood: '', avoid: [] };
+    state.visualDirection = { colors: [], typography: '', imagery: '', shapes: '', composition: '', visualPersonality: '', mood: '', avoid: [], rationale: [] };
 
     assert.deepEqual(missingSections(state), ['personality', 'visualDirection']);
   });
@@ -474,7 +474,7 @@ describe('stressTest', () => {
 
   it('tells the model which sections are missing, so it does not invent findings', async () => {
     const state = completeState();
-    state.visualDirection = { colors: [], typography: '', imagery: '', shapes: '', mood: '', avoid: [] };
+    state.visualDirection = { colors: [], typography: '', imagery: '', shapes: '', composition: '', visualPersonality: '', mood: '', avoid: [], rationale: [] };
 
     const deriver = scriptedDeriver([{ tests: [] }]);
     await stressTest(deriver, request(state));

@@ -15,11 +15,19 @@ export type {
   Personality,
   StrategyOption,
   StressTest,
+  TestReport,
+  TestType,
+  TypeEvaluation,
+  EvaluationStatus,
+  DecisionName,
+  Severity,
+  FindingStatus,
+  Confidence,
   Voice,
   VisualDirection,
 } from './types.ts';
 
-export { TEST_TYPES } from './types.ts';
+export { DECISION_NAMES, TEST_TYPES } from './types.ts';
 
 export {
   BrandStateFileSchema,
@@ -44,6 +52,7 @@ export {
   StrategyOptionSchema,
   BattleResultSchema,
   StressTestResultSchema,
+  StressTestFindingSchema,
   StressTestSchema,
   TypeEvaluationSchema,
   VisualDirectionSchema,
@@ -71,11 +80,19 @@ export type { SectionDiff, ValidationResult } from './state.ts';
 
 export {
   BrandClient,
+  CREDENTIAL_ENV_VAR,
+  MODEL_ENV_VAR,
   DEFAULT_MODEL,
-  hasCredentialEnv,
+  InvalidCredentialError,
+  MissingCredentialError,
+  ModelRequestError,
+  ModelTimeoutError,
   RefusalError,
+  SchemaValidationError,
   SectionParseError,
   addUsage,
+  hasCredentialEnv,
+  toGeminiSchema,
 } from './client.ts';
 export type { BrandClientOptions, DeriveOptions, Effort, SectionDeriver, Usage } from './client.ts';
 
@@ -179,6 +196,7 @@ export {
   UnauditableFindingsError,
   acknowledgeFinding,
   blockingFindings,
+  buildReports,
   canFinalize,
   citesFieldPath,
   findUnauditableFindings,
@@ -221,6 +239,9 @@ export type {
   ReadinessCheck,
   RolloutMilestone,
 } from './brandos.ts';
+
+export { buildBrandDna, describeGaps, isBrandDnaComplete } from './dna.ts';
+export type { BrandDna, DnaField, Decided, Undecided } from './dna.ts';
 
 export { migrateState, needsMigration } from './migrate.ts';
 export type { MigrationResult } from './migrate.ts';

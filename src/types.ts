@@ -126,12 +126,26 @@ export type Voice = {
 
 /** The look and feel: color, type, imagery, shape language, mood, and what to avoid. */
 export type VisualDirection = {
+  /** Named colors with a hex value, a role, and the trait each carries. */
   colors: string[];
   typography: string;
   imagery: string;
+  /** Geometry, corner treatment, density, grid behaviour. */
   shapes: string;
+  /** How the page is arranged: weight, whitespace, density, reading order. */
+  composition: string;
+  /**
+   * How the visual system encodes the personality traits, by name.
+   *
+   * The field that makes the direction auditable against the brand rather than
+   * a set of aesthetic preferences.
+   */
+  visualPersonality: string;
+  /** The feeling the system produces on first sight. */
   mood: string;
   avoid: string[];
+  /** Why this follows from the approved strategy and personality. */
+  rationale: string[];
 };
 
 /**
@@ -202,6 +216,29 @@ export const TEST_TYPES = [
 
 export type TestType = (typeof TEST_TYPES)[number];
 
+/**
+ * The decisions a stress-test finding can bear on.
+ *
+ * Deliberately the same names as the Brand DNA fields, so a finding points at a node the
+ * UI can highlight and the dependency-update rule can follow. A free-text field here
+ * would be unusable for either.
+ */
+export const DECISION_NAMES = [
+  'audience',
+  'problem',
+  'positioning',
+  'valueProposition',
+  'differentiator',
+  'personality',
+  'principles',
+  'namingDirection',
+  'voice',
+  'visualDirection',
+  'selectedStrategy',
+] as const;
+
+export type DecisionName = (typeof DECISION_NAMES)[number];
+
 /** How much to trust a generated decision. */
 export type Confidence = 'low' | 'medium' | 'high';
 
@@ -229,8 +266,33 @@ export type StressTest = {
   impact: string;
   /** A concrete fix a human could carry out. */
   recommendation: string;
+  /**
+   * A different option, where the recommendation is not the only way out.
+   *
+   * Optional on a stored finding because findings recorded before this field existed do
+   * not have one; the engine requires it of every new finding.
+   */
+  alternative?: string;
+  /** Which decision the finding bears on, as a Brand DNA node name. */
+  affectedDecision?: DecisionName;
   /** Absent means `open`. */
   status?: FindingStatus;
+};
+
+/**
+ * What one test concluded.
+ *
+ * `outcome` is the explicit answer to "did this test find anything", which an empty
+ * findings list only implies. A reader must be able to tell a genuine pass from a test
+ * that could not run.
+ */
+export type TestReport = {
+  type: TestType;
+  outcome: 'pass' | 'issues-found' | 'partial' | 'not-testable';
+  /** How many findings this test produced. */
+  findings: number;
+  /** Why, when the outcome is not a plain pass. */
+  note?: string;
 };
 
 /** Whether a test type could actually be run against the state it was given. */

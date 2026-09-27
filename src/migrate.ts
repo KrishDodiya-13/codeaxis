@@ -119,6 +119,7 @@ export function migrateState(value: unknown): MigrationResult {
 
   const consistency = migrateConsistency(input.consistency, notes);
   const positioning = migratePositioning(input.positioning, notes);
+  const visualDirection = migrateVisualDirection(input.visualDirection, notes);
 
   const state = {
     id: typeof input.id === 'string' ? input.id : randomUUID(),
@@ -133,7 +134,7 @@ export function migrateState(value: unknown): MigrationResult {
     ...(input.selectedStrategy === undefined ? {} : { selectedStrategy: input.selectedStrategy }),
     personality,
     naming,
-    visualDirection: input.visualDirection,
+    visualDirection,
     voice,
     stressTests: Array.isArray(input.stressTests) ? input.stressTests : [],
     consistency,
@@ -144,6 +145,38 @@ export function migrateState(value: unknown): MigrationResult {
   if (from === 'pre-1.0.0') notes.push(`schemaVersion set to ${SCHEMA_VERSION}`);
 
   return { state, from, notes };
+}
+
+/**
+ * Schema 1.2.0 added `composition`, `visualPersonality` and `rationale` to the visual
+ * direction.
+ *
+ * There is nothing in an older state to derive them from, so they arrive empty. That is
+ * deliberate: inventing a composition or a trait mapping would be exactly the
+ * disconnected-from-strategy guess this stage exists to prevent. An already-populated
+ * visual direction will therefore fail `validateState` until the stage is re-run, which
+ * is the honest signal — the note says so.
+ */
+function migrateVisualDirection(value: unknown, notes: string[]): unknown {
+  if (value === null || value === undefined || typeof value !== 'object') return value;
+
+  const old = value as Record<string, unknown>;
+  if (typeof old.composition === 'string' && typeof old.visualPersonality === 'string') return old;
+
+  const wasPopulated = typeof old.mood === 'string' && old.mood !== '';
+  notes.push(
+    'visualDirection gained composition, visualPersonality and rationale in schema 1.2.0; they are ' +
+      (wasPopulated
+        ? 'empty because the stored state predates them — re-run the visualize stage to fill them'
+        : 'empty, which is correct for a section that has not been derived yet'),
+  );
+
+  return {
+    ...old,
+    composition: typeof old.composition === 'string' ? old.composition : '',
+    visualPersonality: typeof old.visualPersonality === 'string' ? old.visualPersonality : '',
+    rationale: Array.isArray(old.rationale) ? old.rationale : [],
+  };
 }
 
 /**

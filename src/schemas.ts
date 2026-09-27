@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import { DIRECTIONS } from './archetypes.ts';
-import { TEST_TYPES } from './types.ts';
+import { DECISION_NAMES, TEST_TYPES } from './types.ts';
 
 /**
  * The contract version.
@@ -19,7 +19,7 @@ import { TEST_TYPES } from './types.ts';
  * stored object built against an older version needs `migrateState` before it can be
  * read. See the changelog in docs/brand-dna-contract.md.
  */
-export const SCHEMA_VERSION = '1.1.0';
+export const SCHEMA_VERSION = '1.2.0';
 import type { BrandState, BrandStateSection } from './types.ts';
 
 /**
@@ -338,12 +338,35 @@ export const VisualDirectionSchema = strictObject({
   colors: z
     .array(text())
     .min(2)
-    .describe('Named colors with hex values and a role, e.g. "Ink #12141A — primary text".'),
-  typography: text('Type direction with concrete typeface suggestions.'),
-  imagery: text('What imagery shows and how it is treated.'),
-  shapes: text('Shape language: geometry, corners, density, grid.'),
-  mood: text('The feeling the visual system should produce.'),
-  avoid: z.array(text()).min(1).describe('Visual choices that would misrepresent the brand.'),
+    .describe(
+      'Named colors with a hex value, a role, and the trait each one carries, e.g. "Ink #12141A — primary text, carries the exacting trait". A palette with no stated reason is decoration.',
+    ),
+  typography: text(
+    'Type direction with concrete typeface suggestions, and what about the chosen voice or personality each one serves. Naming a typeface without saying why is not a direction.',
+  ),
+  imagery: text(
+    'What the imagery shows and how it is treated. "Photography" is not a direction; "unstyled workshop photography, available light, hands in frame" is. Say which trait the treatment expresses.',
+  ),
+  shapes: text('Shape language: geometry, corner treatment, density, grid behaviour.'),
+  composition: text(
+    'How the page is arranged: where weight sits, how much whitespace, how dense, what the eye meets first and second. A layout instruction a designer could start from, not an adjective.',
+  ),
+  visualPersonality: text(
+    'How this visual system encodes the personality traits by name. Map them: which decision carries "exacting", which carries "plain-spoken". This is the field that makes the whole direction auditable against the brand, so it must name real traits from the personality section rather than inventing new ones.',
+  ),
+  mood: text('The feeling the system produces when someone lands on it for the first time.'),
+  avoid: z
+    .array(text())
+    .min(1)
+    .describe(
+      'The visual choices that would misrepresent this brand specifically. Name the tempting mistake — what a designer would reach for by default here and get wrong — not generic warnings.',
+    ),
+  rationale: z
+    .array(text())
+    .min(2)
+    .describe(
+      'Why this visual direction follows from the approved strategy and personality. Each line must cite what it comes from — a personality trait, the chosen direction, the positioning, an audience fact from discovery. A line that could precede any palette is not a rationale.',
+    ),
 });
 
 /**
@@ -465,10 +488,44 @@ export const StressTestSchema = strictObject({
   recommendation: text(
     'A concrete fix, naming which field to change and roughly how. Not "make the differentiator stronger".',
   ),
+  /*
+   * Optional on a stored finding, required of a new one.
+   *
+   * Findings recorded before these fields existed do not have them, and rejecting a whole
+   * stored state over that would be worse than reading it. `StressTestFindingSchema`
+   * below is what the engine asks the model for, and it requires both.
+   */
+  alternative: text(
+    'A genuinely different way out, not a restatement of the recommendation. If the fix is to soften a claim, the alternative might be to keep the claim and change who it is aimed at. Where there is honestly only one sensible route, say what accepting the finding as-is would cost instead.',
+  ).optional(),
+  affectedDecision: z
+    .enum(DECISION_NAMES)
+    .describe(
+      'Which single decision this finding bears on, as a Brand DNA node name. Pick the one that would have to change — not everything the issue touches.',
+    )
+    .optional(),
   status: z
     .enum(['open', 'acknowledged', 'resolved'])
     .describe('Set by a human after the fact, not by you. Leave it out.')
     .optional(),
+});
+
+/**
+ * What the engine asks the model for: a finding with nothing left out.
+ *
+ * Every field the contract promises is required here, so a finding that arrives without
+ * an alternative or without naming the decision it affects fails validation rather than
+ * reaching the caller half-formed.
+ */
+export const StressTestFindingSchema = StressTestSchema.extend({
+  alternative: text(
+    'A genuinely different way out, not a restatement of the recommendation. If the fix is to soften a claim, the alternative might be to keep the claim and change who it is aimed at. Where there is honestly only one sensible route, say what accepting the finding as-is would cost instead.',
+  ),
+  affectedDecision: z
+    .enum(DECISION_NAMES)
+    .describe(
+      'Which single decision this finding bears on, as a Brand DNA node name. Pick the one that would have to change — not everything the issue touches.',
+    ),
 });
 
 export const TypeEvaluationSchema = strictObject({
@@ -490,7 +547,7 @@ export const TypeEvaluationSchema = strictObject({
  */
 export const StressTestResultSchema = strictObject({
   tests: z
-    .array(StressTestSchema)
+    .array(StressTestFindingSchema)
     .describe(
       'The findings. An empty array is a valid and good result — it means nothing failed. Do not pad this with manufactured nitpicks to look thorough.',
     ),
@@ -603,8 +660,11 @@ const LooseVisualDirectionSchema = strictObject({
   typography: looseText,
   imagery: looseText,
   shapes: looseText,
+  composition: looseText,
+  visualPersonality: looseText,
   mood: looseText,
   avoid: looseList,
+  rationale: looseList,
 });
 
 export const BrandStateFileSchema = strictObject({
@@ -697,6 +757,8 @@ export const BrandStateFileSchema = strictObject({
       evidence: looseText,
       impact: looseText,
       recommendation: looseText,
+      alternative: looseText.optional(),
+      affectedDecision: looseText.optional(),
       status: looseText.optional(),
     }),
   ),

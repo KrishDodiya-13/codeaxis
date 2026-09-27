@@ -83,8 +83,11 @@ export function createInitialState(project: Project): BrandState {
       typography: '',
       imagery: '',
       shapes: '',
+      composition: '',
+      visualPersonality: '',
       mood: '',
       avoid: [],
+      rationale: [],
     },
     voice: {
       toneAttributes: [],

@@ -24,6 +24,7 @@ import type {
   Severity,
   StrategyOption,
   StressTest,
+  TestReport,
   TestType,
   TypeEvaluation,
 } from './types.ts';
@@ -52,6 +53,13 @@ export type StressSummary = {
 export type StressTestResponse = {
   tests: StressTest[];
   summary: StressSummary;
+  /**
+   * One entry per test run, saying explicitly whether it found anything.
+   *
+   * An empty `tests` array only *implies* that every test passed; it cannot distinguish a
+   * clean brand from a test that never ran. This states it.
+   */
+  reports: TestReport[];
   /**
    * Per test type, whether it could actually run — rendered as the flat strings the
    * endpoint contract specifies. `evaluations` carries the same information
@@ -308,6 +316,38 @@ export function missingSections(state: BrandState): string[] {
   ).filter((section) => !isSectionPopulated(state, section));
 }
 
+/**
+ * Turns the model's testability claims plus the actual findings into an explicit
+ * per-test outcome.
+ *
+ * The findings count is derived, never taken on trust, so "pass" means the test ran and
+ * genuinely produced nothing — not that the model said so.
+ */
+export function buildReports(
+  evaluations: readonly TypeEvaluation[],
+  tests: readonly StressTest[],
+): TestReport[] {
+  return evaluations.map((evaluation) => {
+    const findings = tests.filter((finding) => finding.type === evaluation.type).length;
+
+    const outcome: TestReport['outcome'] =
+      evaluation.status === 'not-testable'
+        ? 'not-testable'
+        : findings > 0
+          ? 'issues-found'
+          : evaluation.status === 'partial'
+            ? 'partial'
+            : 'pass';
+
+    return {
+      type: evaluation.type,
+      outcome,
+      findings,
+      ...(evaluation.note === undefined ? {} : { note: evaluation.note }),
+    };
+  });
+}
+
 /** Renders the structured evaluations as the flat strings the contract specifies. */
 export function renderEvaluatedTypes(evaluations: readonly TypeEvaluation[]): Record<string, string> {
   const rendered: Record<string, string> = {};
@@ -400,6 +440,7 @@ export async function stressTest(
     value: {
       tests,
       summary: summarize(tests),
+      reports: buildReports(evaluations, tests),
       evaluatedTypes: renderEvaluatedTypes(evaluations),
       evaluations,
     },

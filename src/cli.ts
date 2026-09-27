@@ -122,8 +122,7 @@ Options
 Sections
   ${SECTION_ORDER.join(', ')}
 
-Credentials resolve from ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or an
-\`ant auth login\` profile.`;
+The model API key resolves from GEMINI_API_KEY, which is read server-side only.`;
 
 const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -657,8 +656,8 @@ async function commandServe(args: Args): Promise<void> {
 
   if (!hasCredentialEnv()) {
     process.stderr.write(
-      'Warning: neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN is set. Requests will fail\n' +
-        '  unless an `ant auth login` profile is active. Keys stay server-side either way.\n\n',
+      'Warning: GEMINI_API_KEY is not set, so every model call will fail. The key is read\n' +
+        '  server-side only and is never sent to a browser.\n\n',
     );
   }
 

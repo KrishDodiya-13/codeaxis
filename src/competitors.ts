@@ -1,5 +1,5 @@
 /**
- * An optional competitor lookup backed by Claude's server-side web search.
+ * An optional competitor lookup backed by Gemini's Google Search grounding.
  *
  * Entirely opt-in. POSITION works correctly with no lookup at all — its prompt
  * already asks for the realistic informal alternative when no competitors are
@@ -10,13 +10,13 @@
  * (an internal catalogue, a CRM, a static list) can satisfy `CompetitorLookup`
  * without touching anything else.
  */
-import Anthropic from '@anthropic-ai/sdk';
-import { DEFAULT_MODEL } from './client.ts';
+import { GoogleGenAI } from '@google/genai';
+import { CREDENTIAL_ENV_VAR, DEFAULT_MODEL } from './client.ts';
 import type { CompetitorLookup } from './position.ts';
 import type { Discovery } from './types.ts';
 
 export type WebSearchLookupOptions = {
-  client?: Anthropic;
+  client?: GoogleGenAI;
   model?: string;
   /** Cap on searches per lookup. Kept low: this is one narrow question. */
   maxUses?: number;
@@ -35,25 +35,16 @@ export type WebSearchLookupOptions = {
 export function createWebSearchCompetitorLookup(
   options: WebSearchLookupOptions = {},
 ): CompetitorLookup {
-  const client = options.client ?? new Anthropic();
+  const client =
+    options.client ?? new GoogleGenAI({ apiKey: (process.env[CREDENTIAL_ENV_VAR] ?? '').trim() });
   const model = options.model ?? DEFAULT_MODEL;
   const maxUses = options.maxUses ?? 3;
   const limit = options.limit ?? 6;
 
   return async (discovery: Discovery): Promise<string[]> => {
-    const response = await client.messages.create({
+    const response = await client.models.generateContent({
       model,
-      max_tokens: 2000,
-      // The search tool runs server-side; do not also declare code execution,
-      // which the dynamic-filtering variant already uses internally.
-      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: maxUses }],
-      system:
-        'You identify existing products that solve a given problem. You are a lookup step, not a strategist: ' +
-        'return names only, and never invent a product you did not find.',
-      messages: [
-        {
-          role: 'user',
-          content: `Search for existing products that solve this problem.
+      contents: `Search for existing products that solve this problem.
 
 Problem: ${discovery.problem}
 Audience: ${discovery.targetAudience}
@@ -62,23 +53,26 @@ Need: ${discovery.userNeed}
 Return at most ${limit} real, existing products or services, including informal alternatives people improvise with (a spreadsheet, a group chat, a subreddit) where those are what people actually use.
 
 Reply with nothing but a JSON array of strings, e.g. ["Product A", "Discord servers"]. If you find none, reply with [].`,
-        },
-      ],
+      config: {
+        systemInstruction:
+          'You identify existing products that solve a given problem. You are a lookup step, not a ' +
+          'strategist: return names only, and never invent a product you did not find.',
+        // Grounding runs on Google's side. A structured response schema cannot be combined
+        // with a tool, so the reply is parsed tolerantly instead — which is fine here,
+        // because an empty result is a perfectly good answer for an advisory lookup.
+        tools: [{ googleSearch: {} }],
+        maxOutputTokens: 2000,
+      },
     });
 
-    // A server tool can pause a long turn. One resume is enough for a lookup this
-    // narrow; beyond that, an empty list is a fine answer.
-    if (response.stop_reason === 'pause_turn' || response.stop_reason === 'refusal') return [];
+    if (response.promptFeedback?.blockReason !== undefined) return [];
 
     return parseCompetitorList(textOf(response), limit);
   };
 }
 
-function textOf(response: Anthropic.Message): string {
-  return response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n');
+function textOf(response: { text?: string }): string {
+  return response.text ?? '';
 }
 
 /**

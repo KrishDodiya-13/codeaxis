@@ -1,144 +1,203 @@
 /**
  * Request-shape tests for `BrandClient`.
  *
- * These run against a fake transport rather than the API, so they need no
- * credentials. What they verify is the part a stub deriver cannot: that the
- * request body actually sent matches what the caching and structured-output
- * design intends, and that the response handling covers refusal and truncation.
+ * These run against an injected fake SDK client rather than the network, so they need no
+ * credentials. What they verify is the part a stub deriver cannot: that the request
+ * actually sent matches what the structured-output design intends, and that each
+ * distinguishable failure is reported as its own error.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { z } from 'zod';
-import Anthropic from '@anthropic-ai/sdk';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
-import { BrandClient, DEFAULT_MODEL, RefusalError, SectionParseError } from '../src/client.ts';
-import { METHODOLOGY } from '../src/prompts.ts';
+import type { GoogleGenAI } from '@google/genai';
+import {
+  BrandClient,
+  DEFAULT_MODEL,
+  InvalidCredentialError,
+  ModelRequestError,
+  ModelTimeoutError,
+  RefusalError,
+  SchemaValidationError,
+  SectionParseError,
+  toGeminiSchema,
+} from '../src/client.ts';
+import { METHODOLOGY, STEP_INSTRUCTIONS } from '../src/prompts.ts';
 import {
   BattleResultSchema,
   DiscoverResultSchema,
   FinalBrandDraftSchema,
-  DiscoverySchema,
   PositionResultSchema,
   StressTestResultSchema,
   sectionSchemas,
 } from '../src/schemas.ts';
 import { SECTION_ORDER } from '../src/state.ts';
-import { sectionFixtures } from './fixtures.ts';
+import { discoverResult, sectionFixtures } from './fixtures.ts';
 
 type Captured = Record<string, any>;
 
-/** A client whose transport records the request body and replays a canned response. */
-function fakeClient(response: Record<string, unknown>, captured: Captured[]): Anthropic {
-  return new Anthropic({
-    apiKey: 'test-key-not-used',
-    maxRetries: 0,
-    fetch: async (_url, init) => {
-      captured.push(JSON.parse(String((init as RequestInit).body)));
-      return new Response(JSON.stringify(response), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
+/** A minimal stand-in for the SDK, recording the request and replaying a canned reply. */
+function fakeClient(
+  reply: Record<string, unknown> | (() => never),
+  captured: Captured[],
+): GoogleGenAI {
+  return {
+    models: {
+      generateContent: async (params: Captured) => {
+        captured.push(params);
+        if (typeof reply === 'function') reply();
+        return reply;
+      },
     },
-  });
+  } as unknown as GoogleGenAI;
 }
 
-function messageResponse(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+/** A well-formed Gemini reply carrying `value` as its JSON text. */
+function geminiReply(value: unknown, overrides: Record<string, unknown> = {}) {
   return {
-    id: 'msg_test',
-    type: 'message',
-    role: 'assistant',
-    model: DEFAULT_MODEL,
-    content: [{ type: 'text', text: JSON.stringify(sectionFixtures.discovery) }],
-    stop_reason: 'end_turn',
-    stop_sequence: null,
-    usage: {
-      input_tokens: 1200,
-      output_tokens: 340,
-      cache_creation_input_tokens: 0,
-      cache_read_input_tokens: 900,
+    text: JSON.stringify(value),
+    candidates: [{ finishReason: 'STOP' }],
+    usageMetadata: {
+      promptTokenCount: 1200,
+      candidatesTokenCount: 300,
+      thoughtsTokenCount: 40,
+      cachedContentTokenCount: 900,
     },
     ...overrides,
   };
 }
 
 async function derive(
-  response: Record<string, unknown>,
+  reply: Record<string, unknown> | (() => never),
   options: { effort?: 'low' | 'high'; maxTokens?: number } = {},
 ) {
   const captured: Captured[] = [];
-  const client = new BrandClient({ client: fakeClient(response, captured), ...options });
-  const result = await client.deriveSection('discovery', '{"project":{"idea":"x"}}', DiscoverySchema);
+  const client = new BrandClient({ client: fakeClient(reply, captured), ...options });
+  const result = await client.deriveSection(
+    'discovery',
+    '{"project":{"idea":"x"}}',
+    DiscoverResultSchema,
+  );
   return { request: captured[0]!, result };
 }
 
 describe('the request BrandClient builds', () => {
-  it('uses claude-opus-5 and adaptive thinking by default', async () => {
-    const { request } = await derive(messageResponse());
-    assert.equal(request.model, 'claude-opus-5');
-    assert.deepEqual(request.thinking, { type: 'adaptive' });
-    assert.equal(request.output_config.effort, 'high');
-    assert.equal(request.max_tokens, 16000);
+  it('uses the current fast Gemini model by default', async () => {
+    const { request } = await derive(geminiReply(discoverResult));
+
+    assert.equal(DEFAULT_MODEL, 'gemini-3.8-flash');
+    assert.equal(request.model, 'gemini-3.8-flash');
   });
 
-  it('puts the cache breakpoint on the methodology block, ahead of the step instructions', async () => {
-    const { request } = await derive(messageResponse());
+  it('puts the methodology ahead of the step instructions in the system instruction', async () => {
+    const { request } = await derive(geminiReply(discoverResult));
+    const system = request.config.systemInstruction as string;
 
-    assert.equal(request.system.length, 2);
-    assert.equal(request.system[0].text, METHODOLOGY);
-    assert.deepEqual(request.system[0].cache_control, { type: 'ephemeral' });
-    // The volatile half must sit after the breakpoint, or the prefix never hits.
-    assert.equal(request.system[1].cache_control, undefined);
-    assert.match(request.system[1].text, /This step: discovery/);
+    assert.ok(system.startsWith(METHODOLOGY));
+    assert.ok(system.includes(STEP_INSTRUCTIONS.discovery));
+    assert.match(system, /This step: discovery/);
   });
 
-  it('sends a byte-identical cached prefix for every section', async () => {
+  it('sends the same methodology prefix for every section', async () => {
     const captured: Captured[] = [];
-    const client = new BrandClient({ client: fakeClient(messageResponse(), captured) });
+    const client = new BrandClient({
+      client: fakeClient(geminiReply(discoverResult), captured),
+    });
 
-    await client.deriveSection('discovery', '{"a":1}', DiscoverySchema);
-    await client.deriveSection('positioning', '{"a":1}', DiscoverySchema);
+    await client.deriveSection('discovery', '{"a":1}', DiscoverResultSchema);
+    await client.deriveSection('positioning', '{"a":1}', DiscoverResultSchema);
 
-    assert.equal(captured[0]!.system[0].text, captured[1]!.system[0].text);
-    assert.notEqual(captured[0]!.system[1].text, captured[1]!.system[1].text);
+    const prefixOf = (s: string) => s.slice(0, METHODOLOGY.length);
+    assert.equal(
+      prefixOf(captured[0]!.config.systemInstruction),
+      prefixOf(captured[1]!.config.systemInstruction),
+    );
+    assert.notEqual(captured[0]!.config.systemInstruction, captured[1]!.config.systemInstruction);
   });
 
-  it('carries the state in the user turn, not the cached prefix', async () => {
-    const { request } = await derive(messageResponse());
-    const content = request.messages[0].content as string;
+  it('carries the state in the user turn, not the system instruction', async () => {
+    const { request } = await derive(geminiReply(discoverResult));
 
-    assert.equal(request.messages.length, 1);
-    assert.equal(request.messages[0].role, 'user');
-    assert.match(content, /<brand_state>/);
-    assert.match(content, /Derive the `discovery` section/);
+    assert.match(request.contents as string, /<brand_state>/);
+    assert.match(request.contents as string, /Derive the `discovery` section/);
+    assert.doesNotMatch(request.config.systemInstruction as string, /<brand_state>/);
   });
 
-  it('requests the section as a JSON schema so the response is validated', async () => {
-    const { request } = await derive(messageResponse());
-    const format = request.output_config.format;
+  it('requests JSON constrained by the section schema', async () => {
+    const { request } = await derive(geminiReply(discoverResult));
 
-    assert.equal(format.type, 'json_schema');
-    assert.deepEqual(Object.keys(format.schema.properties).sort(), [
+    assert.equal(request.config.responseMimeType, 'application/json');
+    const schema = request.config.responseJsonSchema as Record<string, any>;
+    assert.deepEqual(Object.keys(schema.properties).sort(), [
       'assumptions',
       'constraints',
+      'followUpQuestions',
       'goals',
-      'openQuestions',
+      'missingInformation',
       'problem',
       'targetAudience',
       'userNeed',
     ]);
-    // The field guidance in schemas.ts must survive into the schema the model
-    // sees. Reusing one string-schema instance across fields would collapse
-    // these into a shared $ref and drop the descriptions.
-    assert.match(format.schema.properties.targetAudience.description, /exclude someone/);
-    assert.match(format.schema.properties.problem.description, /from the user side/);
-    assert.match(format.schema.properties.userNeed.description, /underlying need/);
+    // The per-field guidance must survive the conversion — it is how each field is
+    // actually instructed.
+    assert.match(schema.properties.targetAudience.description, /stated or directly implied/);
+    assert.match(schema.properties.missingInformation.description, /five to ten gaps/);
   });
 
-  it('describes every field of every model-facing schema, with none lost to deduplication', () => {
-    // Two steps do not ask for their BrandState section directly: discovery asks
-    // for a DISCOVER result and positioning for a POSITION result, each mapped
-    // afterwards. This checks what is actually sent, which is the only thing the
-    // descriptions matter for.
+  it('honours an explicit effort and token cap', async () => {
+    const { request } = await derive(geminiReply(discoverResult), {
+      effort: 'low',
+      maxTokens: 4000,
+    });
+
+    assert.equal(request.config.maxOutputTokens, 4000);
+    // `low` disables thinking outright.
+    assert.equal(request.config.thinkingConfig.thinkingBudget, 0);
+  });
+
+  it('raises the thinking budget with effort', async () => {
+    const low = await derive(geminiReply(discoverResult), { effort: 'low' });
+    const high = await derive(geminiReply(discoverResult), { effort: 'high' });
+
+    assert.ok(
+      high.request.config.thinkingConfig.thinkingBudget >
+        low.request.config.thinkingConfig.thinkingBudget,
+    );
+  });
+
+  it('sends a timeout signal, so a hung call cannot wait forever', async () => {
+    const { request } = await derive(geminiReply(discoverResult));
+    assert.ok(request.config.abortSignal instanceof AbortSignal);
+  });
+});
+
+describe('the schema Gemini is given', () => {
+  it('drops keywords Gemini does not support', () => {
+    const schema = JSON.stringify(toGeminiSchema(DiscoverResultSchema));
+
+    // `$schema` and `minLength` are not in Gemini's supported set; sending them either
+    // does nothing or rejects the request.
+    assert.ok(!schema.includes('$schema'));
+    assert.ok(!schema.includes('minLength'));
+  });
+
+  it('keeps the keywords Gemini does support, so the constraints reach the model', () => {
+    const schema = JSON.stringify(toGeminiSchema(sectionSchemas.personality));
+
+    assert.ok(schema.includes('minItems'), 'array minimums should survive');
+    assert.ok(schema.includes('required'), 'required fields should survive');
+    assert.ok(schema.includes('description'), 'field guidance should survive');
+  });
+
+  it('inlines reused sub-schemas, so no field loses its description to a $ref', () => {
+    const schema = JSON.stringify(toGeminiSchema(sectionSchemas.finalBrand));
+
+    // A $ref sub-schema may carry no sibling keywords, which would silently drop the
+    // per-field instructions that the descriptions hold.
+    assert.ok(!schema.includes('$ref'));
+    assert.ok(!schema.includes('$defs'));
+  });
+
+  it('describes every field of every model-facing schema', () => {
     const modelFacing: Record<string, z.ZodType> = {
       discovery: DiscoverResultSchema,
       positioning: PositionResultSchema,
@@ -152,70 +211,69 @@ describe('the request BrandClient builds', () => {
       finalBrand: FinalBrandDraftSchema,
     };
 
-    // selectedStrategy is the one section with no model-facing schema: choosing a
-    // direction is a human decision, so nothing is ever asked of the model.
-    const NOT_MODEL_FACING = ['selectedStrategy'];
-
-    // Every other section must be covered, so adding one cannot skip this check.
+    // selectedStrategy has no model-facing schema: choosing a direction is a human
+    // decision, so nothing is ever asked of the model.
     assert.deepEqual(
-      [...Object.keys(modelFacing), ...NOT_MODEL_FACING].sort(),
+      [...Object.keys(modelFacing), 'selectedStrategy'].sort(),
       [...SECTION_ORDER].sort(),
     );
 
     for (const [section, schema] of Object.entries(modelFacing)) {
-      const properties = (zodOutputFormat(schema).schema as Record<string, any>).properties as Record<
+      const properties = (toGeminiSchema(schema) as Record<string, any>).properties as Record<
         string,
         any
       >;
       const undescribed = Object.entries(properties)
-        .filter(([, property]) => typeof property.description !== 'string' || property.description === '')
+        .filter(([, p]) => typeof p.description !== 'string' || p.description === '')
         .map(([name]) => name);
 
-      assert.deepEqual(undescribed, [], `${section}: fields with no description: ${undescribed.join(', ')}`);
+      assert.deepEqual(undescribed, [], `${section}: undescribed fields: ${undescribed.join(', ')}`);
     }
-  });
-
-  it('honours an explicit effort and token cap', async () => {
-    const { request } = await derive(messageResponse(), { effort: 'low', maxTokens: 4000 });
-    assert.equal(request.output_config.effort, 'low');
-    assert.equal(request.max_tokens, 4000);
   });
 });
 
 describe('how BrandClient reads the response', () => {
   it('returns the parsed section and the usage', async () => {
-    const { result } = await derive(messageResponse());
+    const { result } = await derive(geminiReply(discoverResult));
 
-    assert.equal(result.value.problem, sectionFixtures.discovery.problem);
+    assert.equal(result.value.problem, discoverResult.problem);
     assert.deepEqual(result.usage, {
       inputTokens: 1200,
+      // Thinking tokens are billed as output, so they are counted there.
       outputTokens: 340,
       cacheCreationTokens: 0,
       cacheReadTokens: 900,
     });
   });
 
-  it('reports a refusal with its category rather than returning nothing', async () => {
+  it('reports a blocked prompt as a refusal', async () => {
     await assert.rejects(
       () =>
-        derive(
-          messageResponse({
-            content: [],
-            stop_reason: 'refusal',
-            stop_details: { type: 'refusal', category: 'cyber', explanation: 'declined' },
-          }),
-        ),
+        derive({
+          promptFeedback: { blockReason: 'SAFETY', blockReasonMessage: 'blocked' },
+        }),
       (error: unknown) => {
         assert.ok(error instanceof RefusalError);
-        assert.equal(error.category, 'cyber');
+        assert.equal(error.category, 'SAFETY');
         return true;
       },
     );
   });
 
+  it('reports a response stopped by a safety filter as a refusal', async () => {
+    await assert.rejects(
+      () => derive({ text: '', candidates: [{ finishReason: 'SAFETY' }] }),
+      RefusalError,
+    );
+  });
+
   it('reports a truncated response instead of parsing half a section', async () => {
     await assert.rejects(
-      () => derive(messageResponse({ stop_reason: 'max_tokens' })),
+      () =>
+        derive({
+          text: '{"problem":',
+          candidates: [{ finishReason: 'MAX_TOKENS' }],
+        }),
       (error: unknown) => {
         assert.ok(error instanceof SectionParseError);
         assert.match(error.message, /cut off/);
@@ -224,14 +282,101 @@ describe('how BrandClient reads the response', () => {
     );
   });
 
-  it('reports a response that does not match the schema', async () => {
+  it('reports text that is not JSON as a parse failure', async () => {
     await assert.rejects(
-      () => derive(messageResponse({ content: [{ type: 'text', text: '{"problem":' }] })),
+      () => derive({ text: 'Here is your brand!', candidates: [{ finishReason: 'STOP' }] }),
       (error: unknown) => {
         assert.ok(error instanceof SectionParseError);
-        assert.equal(error.section, 'discovery');
+        assert.ok(!(error instanceof SchemaValidationError));
+        assert.match(error.message, /not valid JSON/);
         return true;
       },
     );
+  });
+
+  it('distinguishes a schema failure from unparseable text, and names the fields', async () => {
+    await assert.rejects(
+      () => derive(geminiReply({ problem: '', targetAudience: 'a' })),
+      (error: unknown) => {
+        assert.ok(error instanceof SchemaValidationError);
+        // Still a SectionParseError, so existing callers keep working.
+        assert.ok(error instanceof SectionParseError);
+        assert.ok(error.issues.length > 0);
+        assert.ok(error.issues.some((i) => i.path === 'problem'));
+        return true;
+      },
+    );
+  });
+
+  it('reports an empty response rather than crashing on undefined text', async () => {
+    await assert.rejects(
+      () => derive({ text: '', candidates: [{ finishReason: 'STOP' }] }),
+      /was empty/,
+    );
+  });
+
+  it('reports a missing candidate as an API failure', async () => {
+    await assert.rejects(() => derive({ text: '{}', candidates: [] }), ModelRequestError);
+  });
+});
+
+describe('how BrandClient reports transport failures', () => {
+  it('reports a rejected key distinctly from other failures', async () => {
+    const fail = () => {
+      throw Object.assign(new Error('API key not valid. Please pass a valid API key.'), {
+        status: 400,
+      });
+    };
+
+    await assert.rejects(() => derive(fail), InvalidCredentialError);
+  });
+
+  it('reports a 403 as a credential problem', async () => {
+    const fail = () => {
+      throw Object.assign(new Error('permission denied'), { status: 403 });
+    };
+    await assert.rejects(() => derive(fail), InvalidCredentialError);
+  });
+
+  it('reports a rate limit as an API failure, with the status', async () => {
+    const fail = () => {
+      throw Object.assign(new Error('rate limit exceeded'), { status: 429 });
+    };
+
+    await assert.rejects(() => derive(fail), (error: unknown) => {
+      assert.ok(error instanceof ModelRequestError);
+      assert.equal(error.status, 429);
+      return true;
+    });
+  });
+
+  it('reports an abort as a timeout', async () => {
+    const fail = () => {
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+    };
+
+    await assert.rejects(() => derive(fail), ModelTimeoutError);
+  });
+});
+
+describe('credential handling', () => {
+  it('refuses to construct without a key and without an injected client', () => {
+    const saved = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    try {
+      assert.throws(() => new BrandClient(), /GEMINI_API_KEY/);
+    } finally {
+      if (saved !== undefined) process.env.GEMINI_API_KEY = saved;
+    }
+  });
+
+  it('constructs with an injected client even when no key is set', () => {
+    const saved = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    try {
+      assert.ok(new BrandClient({ client: fakeClient(geminiReply({}), []) }));
+    } finally {
+      if (saved !== undefined) process.env.GEMINI_API_KEY = saved;
+    }
   });
 });
