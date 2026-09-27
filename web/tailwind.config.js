@@ -54,6 +54,31 @@ module.exports = {
         sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
         display: ['var(--font-archivo-black)', 'Arial Black', 'sans-serif'],
       },
+      keyframes: {
+        // Hand-drawn stroke reveal, same as the hero's swash. Paths use pathLength={1}.
+        draw: {
+          from: { strokeDashoffset: '1' },
+          to: { strokeDashoffset: '0' },
+        },
+        // The hero's tag wiggle.
+        wiggle: {
+          '0%, 100%': { transform: 'rotate(0deg)' },
+          '25%': { transform: 'rotate(-12deg)' },
+          '55%': { transform: 'rotate(8deg)' },
+          '80%': { transform: 'rotate(-4deg)' },
+        },
+        bob: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-6px)' },
+        },
+      },
+      animation: {
+        draw: 'draw 1.6s 0.4s cubic-bezier(.6,0,.2,1) both',
+        wiggle: 'wiggle 0.9s cubic-bezier(.3,1.6,.5,1)',
+        bob: 'bob 3.2s ease-in-out infinite',
+        'spin-slow': 'spin 22s linear infinite',
+        'spin-slower': 'spin 36s linear infinite reverse',
+      },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
