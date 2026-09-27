@@ -31,6 +31,18 @@ import {
 } from './battle.ts';
 import { DIRECTIONS } from './archetypes.ts';
 import { resolveSelectedStrategy } from './state.ts';
+import {
+  FinalizationBlockedError,
+  StressTestInputError,
+  UnauditableFindingsError,
+  acknowledgeFinding,
+  blockingFindings,
+  stressTest,
+  summarize,
+  validateStressTestRequest,
+} from './stress.ts';
+import { TEST_TYPES } from './types.ts';
+import type { TestType } from './types.ts';
 import { isComplete, rollbackTo, runPipeline } from './pipeline.ts';
 import type { StepRecord } from './pipeline.ts';
 import {
@@ -59,7 +71,10 @@ Usage
   brandstate position <file>       Run POSITION against a discovery JSON file.
   brandstate battle <file>         Generate strategy options from a discovery file.
   brandstate select <DIRECTION>    Choose a direction in a saved run.
-  brandstate serve                 Serve the DISCOVER, POSITION and BATTLE endpoints.
+  brandstate stress-test           Stress-test a saved run and record the findings.
+  brandstate findings              List the findings and the finalization gate.
+  brandstate acknowledge <type>    Accept or resolve a finding, unblocking the gate.
+  brandstate serve                 Serve all four endpoints.
 
 Options
   --run <path>        Run file. Default: runs/brand.json
@@ -81,6 +96,9 @@ Options
   --count <n>         For "battle": how many strategies. Default: 3
   --positioning <path>  For "battle": a positioning JSON file to anchor to.
   --reason <text>     For "select": why this direction was chosen.
+  --scope <list>      For "stress-test": comma-separated test types to re-run.
+  --issue <text>      For "acknowledge": match a finding whose issue contains this.
+  --resolved          For "acknowledge": mark resolved rather than acknowledged.
   --port <n>          For "serve". Default: 3000
   --host <name>       For "serve". Default: 127.0.0.1
 
@@ -449,6 +467,104 @@ Next: brandstate run --run ${path} to develop it.
 `);
 }
 
+async function commandStressTest(args: Args): Promise<void> {
+  const path = runPath(args);
+  const state = await loadState(path);
+
+  const body: Record<string, unknown> = { brandState: state };
+  const scope = flagString(args, 'scope');
+  if (scope !== undefined) {
+    body.scope = scope.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
+  }
+
+  const request = validateStressTestRequest(body);
+  process.stderr.write(`Testing ${request.selectedStrategy.direction}...
+`);
+
+  const result = await stressTest(clientFrom(args), request);
+
+  // A scoped re-run replaces only the types it covered, so decisions recorded
+  // against the other types survive.
+  const covered = new Set(request.scope ?? TEST_TYPES);
+  const kept = state.stressTests.filter((finding) => !covered.has(finding.type));
+  const updated = { ...state, stressTests: [...kept, ...result.value.tests] };
+
+  await saveState(path, updated);
+  process.stdout.write(`${stableStringify(result.value, 2)}
+`);
+  reportFindings(updated.stressTests, path);
+}
+
+async function commandFindings(args: Args): Promise<void> {
+  const path = runPath(args);
+  const state = await loadState(path);
+
+  if (state.stressTests.length === 0) {
+    process.stdout.write('No stress test has been run yet.\n');
+    return;
+  }
+
+  for (const finding of state.stressTests) {
+    const status = finding.status ?? 'open';
+    process.stdout.write(`[${finding.severity}] ${finding.type} (${status})
+  ${finding.issue}
+`);
+  }
+  reportFindings(state.stressTests, path);
+}
+
+async function commandAcknowledge(args: Args): Promise<void> {
+  const type = args.positionals[0];
+  if (type === undefined || !(TEST_TYPES as readonly string[]).includes(type)) {
+    fail(`A test type is required. One of: ${TEST_TYPES.join(', ')}`);
+  }
+
+  const path = runPath(args);
+  const state = await loadState(path);
+  const status = args.flags.has('resolved') ? 'resolved' : 'acknowledged';
+  const issue = flagString(args, 'issue');
+
+  const updated = {
+    ...state,
+    stressTests: acknowledgeFinding(
+      state.stressTests,
+      { type: type as TestType, ...(issue === undefined ? {} : { issue }) },
+      status,
+    ),
+  };
+
+  await saveState(path, updated);
+  process.stdout.write(`Marked ${type} ${status}.
+`);
+  reportFindings(updated.stressTests, path);
+}
+
+/** Prints the gate state after any change to the findings. */
+function reportFindings(tests: Parameters<typeof summarize>[0], path: string): void {
+  const summary = summarize(tests);
+  process.stderr.write(
+    `
+${summary.critical} critical, ${summary.high} high, ${summary.medium} medium, ${summary.low} low.
+`,
+  );
+
+  if (!summary.blocksFinalization) {
+    process.stderr.write('Nothing open at critical or high — the brand can be finalized.\n');
+    return;
+  }
+
+  process.stderr.write('Finalization is blocked by:\n');
+  for (const finding of blockingFindings(tests)) {
+    process.stderr.write(`  [${finding.severity}] ${finding.type}: ${finding.issue}
+`);
+  }
+  process.stderr.write(
+    `
+Fix them and re-run, or accept one: brandstate acknowledge <type> --run ${path}
+`,
+  );
+}
+
 async function commandServe(args: Args): Promise<void> {
   const portFlag = flagString(args, 'port');
   if (portFlag !== undefined && !/^\d+$/.test(portFlag)) {
@@ -503,6 +619,9 @@ async function main(): Promise<void> {
     position: commandPosition,
     battle: commandBattle,
     select: commandSelect,
+    'stress-test': commandStressTest,
+    findings: commandFindings,
+    acknowledge: commandAcknowledge,
     serve: commandServe,
   };
 
@@ -523,7 +642,10 @@ main().catch((error: unknown) => {
     error instanceof PositionInputError ||
     error instanceof VagueCategoryError ||
     error instanceof BattleInputError ||
-    error instanceof IndistinctStrategiesError
+    error instanceof IndistinctStrategiesError ||
+    error instanceof StressTestInputError ||
+    error instanceof UnauditableFindingsError ||
+    error instanceof FinalizationBlockedError
   ) {
     fail(error.message);
   }

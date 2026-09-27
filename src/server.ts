@@ -26,6 +26,13 @@ import {
 } from './position.ts';
 import type { PositionOptions } from './position.ts';
 import type { BattleOptions } from './battle.ts';
+import {
+  StressTestInputError,
+  UnauditableFindingsError,
+  stressTest,
+  validateStressTestRequest,
+} from './stress.ts';
+import type { StressTestOptions } from './stress.ts';
 
 /** Requests larger than this are rejected rather than buffered. */
 const MAX_BODY_BYTES = 1_000_000;
@@ -42,6 +49,8 @@ export type ServerOptions = {
   position?: PositionOptions;
   /** Options for BRAND BATTLE, including the distinctness thresholds. */
   battle?: BattleOptions;
+  /** Options for STRESS TEST, including the evidence retry budget. */
+  stress?: StressTestOptions;
 } & BrandClientOptions;
 
 export function createDiscoverServer(options: ServerOptions = {}): Server {
@@ -50,6 +59,7 @@ export function createDiscoverServer(options: ServerOptions = {}): Server {
     log,
     position: positionOptions = {},
     battle: battleOptions = {},
+    stress: stressOptions = {},
     model,
     effort,
     maxTokens,
@@ -59,7 +69,7 @@ export function createDiscoverServer(options: ServerOptions = {}): Server {
   const write = log ?? ((message: string) => process.stderr.write(`${message}\n`));
 
   return createServer((request, response) => {
-    handle(request, response, deriver, write, positionOptions, battleOptions).catch((error: unknown) => {
+    handle(request, response, deriver, write, positionOptions, battleOptions, stressOptions).catch((error: unknown) => {
       // The handler deals with expected failures itself; reaching here means a
       // bug, so log it and return a generic 500 rather than leaking internals.
       write(`unhandled error: ${String(error)}`);
@@ -76,6 +86,7 @@ async function handle(
   log: (message: string) => void,
   positionOptions: PositionOptions,
   battleOptions: BattleOptions,
+  stressOptions: StressTestOptions,
 ): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://localhost');
   const route = `${request.method} ${url.pathname}`;
@@ -98,7 +109,7 @@ async function handle(
     return;
   }
 
-  const ROUTES = ['/api/discover', '/api/position', '/api/battle'];
+  const ROUTES = ['/api/discover', '/api/position', '/api/battle', '/api/stress-test'];
   if (!ROUTES.includes(url.pathname)) {
     sendJson(response, 404, {
       error: `No route for ${url.pathname}. The endpoints are ${ROUTES.map((r) => `POST ${r}`).join(', ')}.`,
@@ -153,6 +164,26 @@ async function handle(
       return;
     }
 
+    if (url.pathname === '/api/stress-test') {
+      const stressRequest = validateStressTestRequest(parsed);
+      const result = await stressTest(deriver, stressRequest, stressOptions);
+      const { summary } = result.value;
+
+      log(
+        `${route} 200 ${Date.now() - startedAt}ms ` +
+          `findings=${result.value.tests.length} ` +
+          `critical=${summary.critical} high=${summary.high} ` +
+          `blocks=${summary.blocksFinalization} ` +
+          `tokens=${result.usage.inputTokens}/${result.usage.outputTokens}`,
+      );
+
+      // The structured evaluations are dropped from the body: the contract carries
+      // evaluatedTypes as flat strings, and the library exposes the structured form.
+      const { evaluations: _evaluations, ...body } = result.value;
+      sendJson(response, 200, body);
+      return;
+    }
+
     if (url.pathname === '/api/battle') {
       const battleRequest = validateBattleRequest(parsed);
       const result = await battle(deriver, battleRequest, battleOptions);
@@ -192,10 +223,16 @@ async function handle(
       sendJson(response, 502, { error: error.message, collisions: error.reasons });
       return;
     }
+    if (error instanceof UnauditableFindingsError) {
+      log(`${route} 502 findings not auditable`);
+      sendJson(response, 502, { error: error.message, problems: error.problems });
+      return;
+    }
     if (
       error instanceof DiscoverInputError ||
       error instanceof PositionInputError ||
-      error instanceof BattleInputError
+      error instanceof BattleInputError ||
+      error instanceof StressTestInputError
     ) {
       log(`${route} 400 ${error.message}`);
       sendJson(response, 400, { error: error.message });

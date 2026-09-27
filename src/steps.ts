@@ -11,13 +11,13 @@ import {
   ConsistencySchema,
   FinalBrandSchema,
   ShapeSchema,
-  StressTestsResultSchema,
   VisualDirectionSchema,
 } from './schemas.ts';
 import { battle } from './battle.ts';
+import { FinalizationBlockedError, blockingFindings, stressTest } from './stress.ts';
 import { discover, toDiscoverySection } from './discover.ts';
 import { position, toPositioningSection } from './position.ts';
-import { applyDelta, isSectionPopulated, serializeForPrompt } from './state.ts';
+import { applyDelta, isSectionPopulated, resolveSelectedStrategy, serializeForPrompt } from './state.ts';
 import type { BrandState, BrandStateSection, SectionValue } from './types.ts';
 
 /**
@@ -162,14 +162,17 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
     label: 'Stress tests',
     dependsOn: ['selectedStrategy', 'shape', 'visualDirection'],
     async derive(deriver, state) {
-      // The schema wraps the array because a structured-output format needs an
-      // object at its root; the section itself is the bare array.
-      const result = await deriver.deriveSection(
-        'stressTests',
-        serializeForPrompt(state),
-        StressTestsResultSchema,
-      );
-      return { value: result.value.stressTests, usage: result.usage };
+      // Runs through the STRESS TEST flow, so the pipeline and /api/stress-test
+      // share one prompt and one schema. The section stores the findings; the
+      // summary and the evaluation notes are derived, so they are recomputed from
+      // the findings rather than persisted where they could go stale.
+      const selectedStrategy = resolveSelectedStrategy(state);
+      if (selectedStrategy === undefined) {
+        throw new MissingDependencyError('stressTests', ['selectedStrategy']);
+      }
+
+      const result = await stressTest(deriver, { selectedStrategy, brandState: state });
+      return { value: result.value.tests, usage: result.usage };
     },
   },
 
@@ -185,8 +188,15 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
   finalBrand: {
     section: 'finalBrand',
     label: 'Final brand',
-    dependsOn: ['selectedStrategy', 'visualDirection', 'consistency'],
+    dependsOn: ['selectedStrategy', 'shape', 'visualDirection', 'stressTests', 'consistency'],
     async derive(deriver, state) {
+      // The stress test gates finalization. Locking a brand with an unresolved
+      // critical or high finding is exactly what Phase 5 exists to prevent, so this
+      // refuses rather than warns — the finding has to be fixed and re-tested, or
+      // explicitly accepted as a trade-off.
+      const blocking = blockingFindings(state.stressTests);
+      if (blocking.length > 0) throw new FinalizationBlockedError(blocking);
+
       return deriver.deriveSection('finalBrand', serializeForPrompt(state), FinalBrandSchema);
     },
   },

@@ -4,12 +4,13 @@ import { z } from 'zod';
 import {
   BrandStateFileSchema,
   BrandStateSchema,
-  StressTestsResultSchema,
+  StressTestResultSchema,
   parseBrandState,
   parseCompleteBrandState,
   sectionSchemas,
 } from '../src/schemas.ts';
 import { SECTION_ORDER, createInitialState } from '../src/state.ts';
+import { TEST_TYPES } from '../src/types.ts';
 import { completeState, project, sectionFixtures } from './fixtures.ts';
 
 /** The field names of an object schema, recursively, as sorted dotted paths. */
@@ -98,16 +99,43 @@ describe('section schemas', () => {
   });
 });
 
-describe('StressTestsResultSchema', () => {
-  it('wraps the array in an object, since a format needs an object root', () => {
-    assert.ok(StressTestsResultSchema.safeParse({ stressTests: sectionFixtures.stressTests }).success);
-    assert.equal(StressTestsResultSchema.safeParse(sectionFixtures.stressTests).success, false);
+describe('StressTestResultSchema', () => {
+  const evaluatedTypes = TEST_TYPES.map((type) => ({ type, status: 'evaluated' as const }));
+
+  it('carries the findings and the per-type evaluations', () => {
+    const result = StressTestResultSchema.safeParse({
+      tests: sectionFixtures.stressTests,
+      evaluatedTypes,
+    });
+    assert.ok(result.success, result.success ? '' : result.error.message);
   });
 
-  it('requires at least three dimensions to be tested', () => {
-    assert.equal(
-      StressTestsResultSchema.safeParse({ stressTests: sectionFixtures.stressTests.slice(0, 2) }).success,
-      false,
-    );
+  it('accepts an empty findings list, which is a good result and not a failure', () => {
+    assert.ok(StressTestResultSchema.safeParse({ tests: [], evaluatedTypes }).success);
+  });
+
+  it('does not carry a summary, which is computed from the findings instead', () => {
+    assert.equal('summary' in StressTestResultSchema.shape, false);
+  });
+
+  it('rejects a finding of an unknown type', () => {
+    const bad = [{ ...sectionFixtures.stressTests[0]!, type: 'vibes' }];
+    assert.equal(StressTestResultSchema.safeParse({ tests: bad, evaluatedTypes }).success, false);
+  });
+
+  it('accepts critical as a severity', () => {
+    const critical = [{ ...sectionFixtures.stressTests[0]!, severity: 'critical' as const }];
+    assert.ok(StressTestResultSchema.safeParse({ tests: critical, evaluatedTypes }).success);
+  });
+
+  it('requires evidence and impact to say something', () => {
+    for (const field of ['evidence', 'impact', 'issue', 'recommendation'] as const) {
+      const bad = [{ ...sectionFixtures.stressTests[0]!, [field]: '' }];
+      assert.equal(
+        StressTestResultSchema.safeParse({ tests: bad, evaluatedTypes }).success,
+        false,
+        field,
+      );
+    }
   });
 });

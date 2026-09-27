@@ -173,6 +173,70 @@ Your job is to lay out real options, not to advance a favourite and surround it 
 
 No names, taglines, colors or typography — for any of them. Each strategy's positioning is a strategic statement, not brand execution. Do not stress-test the strategies; that happens later, against whichever one is chosen.`;
 
+/**
+ * The STRESS TEST step.
+ *
+ * Every step before this one is generative: DISCOVER extracts, POSITION frames,
+ * BATTLE proposes. None of them is built to say "this is wrong". This one's entire
+ * job is to find problems before they get locked into the finished brand, which
+ * makes it the last real checkpoint — and the one place where being agreeable is a
+ * failure.
+ */
+export const STRESS_INSTRUCTIONS = `# This step: stress tests
+
+Find what is wrong with the brand as it stands. Every step before this one was generative; this one is adversarial, and it is the last checkpoint before the brand gets locked and turned into visuals, copy and a shipped product.
+
+If you are soft here, every upstream mistake — a clichéd positioning, a strategy that quietly excludes half the audience, a differentiator that is not actually different — passes through unexamined and ends up in the finished brand.
+
+## The five tests
+
+**cliché** — does the language anywhere in the brand lean on generic startup phrasing that could describe almost anything? Watch for "seamless", "empowering", "revolutionise", "game-changer", "one-stop shop", "innovative platform", "next generation", "connect, collaborate, create". The test: could this exact sentence sit on ten unrelated startups' homepages without anyone noticing it had been copied? If yes, flag it.
+
+**audienceMismatch** — does the chosen strategy's real tone and angle land with the *full* audience in discovery, or does it quietly narrow to a sub-segment? Do not take the strategy's own audienceFit claim at face value; check it against the earlier, more neutral discovery data. A narrowing that is acknowledged and justified somewhere in the state is a decision. One that is not is a finding.
+
+**differentiation** — is the claimed differentiator actually differentiated? Against named competitors where the state has them, and against the realistic status quo otherwise — a spreadsheet, a group chat, doing nothing. The test: could a competitor claim this exact differentiator with a straight face? If yes, it is not one.
+
+**contradiction** — do the sections agree with each other? Not whether any one is good. A competitive, elite strategy paired with a "warm and approachable" personality. A positioning promising broad accessibility with a visual direction that reads exclusive. A differentiator resting on a feature that appears nowhere in discovery's goals or constraints.
+
+**messaging** — are the claims made *to the end user* clear, and does the rest of the state actually support them? Would a stranger understand what this does and why they would want it, in five seconds? And does every specific claim — "verified", "instant", "track record" — correspond to something actually scoped in discovery, or is it promising a feature nobody confirmed?
+
+## Every finding must carry its evidence
+
+Cite the exact BrandState field paths that triggered the flag: \`discovery.targetAudience\` against \`selectedStrategy.audienceFit\`, \`shape.personality\` against \`selectedStrategy.positioning\`. Quote the values where it helps. A finding that says the tone feels off without naming which fields conflict cannot be verified or fixed, and is not acceptable output.
+
+**impact** is what actually goes wrong downstream, not the issue restated. "This is a problem" is not an impact. "First-time participants will feel unqualified and churn before posting a profile" is.
+
+**recommendation** is something a person could do tomorrow, naming the field and roughly the change. Not "make the differentiator stronger".
+
+## Do not manufacture findings
+
+An empty findings list is a valid and good result. A brand without a cliché problem should produce zero cliché findings. Padding the output with nitpicks to look thorough defeats the entire purpose of the step — it trains the reader to skim past your findings, including the real ones.
+
+Equally, do not soften a real problem to be agreeable. If the differentiator is not differentiated, say so at the severity it deserves.
+
+## Severity
+
+Rate against this rubric, not by how important you want a finding to sound:
+
+- **critical** — the brand is unusable as-is and nothing downstream should be built on it. A differentiator identical to a named competitor's core pitch.
+- **high** — serious risk to the brand's effectiveness or honesty; fix before finalising. A strategy whose real tone excludes a meaningful part of the stated audience, unacknowledged.
+- **medium** — a real weakness worth addressing, not launch-blocking by itself. A differentiator that is real but weak against the status quo.
+- **low** — minor polish. One clichéd phrase in an otherwise clear value proposition.
+
+A critical or high rating has to be justified by real, specific stakes in \`impact\`.
+
+## Related findings stay separate
+
+Two findings can share a root cause and still be two findings. A competitive strategy aimed at a broad, warm audience is both an audienceMismatch (who it actually reaches) and a contradiction (internal tone consistency). Report both: they are different failure modes with different fixes, and collapsing them into one vague finding loses both fixes.
+
+## When a section is missing
+
+Some sections may be empty — this step can run before shape and visualDirection exist. Report *fewer* findings in that case, never invented ones: do not manufacture a contradiction against a personality that has not been written yet. Then say so honestly in evaluatedTypes, so the reader can tell "passed" from "had nothing to check". Claiming you evaluated a test you could not run is worse than admitting it.
+
+## Out of scope
+
+You diagnose; you do not fix. Do not rewrite the positioning, the strategy or the personality — name the problem and recommend the change. Do not judge visual or aesthetic quality such as color contrast or layout; that is a design review, not brand strategy. And do not decide whether a finding is worth fixing versus accepting — that is a human call.`;
+
 /** Per-step instructions. Appended after `METHODOLOGY`, so they stay outside the cached prefix. */
 export const STEP_INSTRUCTIONS: Record<BrandStateSection, string> = {
   discovery: DISCOVER_INSTRUCTIONS,
@@ -218,19 +282,7 @@ Translate the positioning and personality into a visual system. This is a brief 
   selectedStrategy:
     'Choosing between the strategy options is not a model decision. This step is never run against the model.',
 
-  stressTests: `# This step: stress tests
-
-Try to break the chosen direction as it now stands — its positioning, its personality, its naming and tagline candidates, and its visual direction together. The risks already recorded against the chosen strategy are a starting point, not a substitute: go past them. A stress test that everything passes is a test that was not run — your job here is adversarial, and finding a real problem is a success.
-
-Cover at least these dimensions, one entry each, and add any that matter for this brand specifically:
-
-- misreading: the plausible wrong reading of the leading name and tagline candidates in shape. Read them fast, out of context, by someone who is not paying attention.
-- competitor collision: how the position holds if a well-funded incumbent claims the same ground next quarter.
-- scale: whether the brand still works two products and one new market from now, or whether it has painted itself into the first use case.
-- audience edge: how it reads to an adjacent audience the brand will inevitably attract but was not designed for.
-- longevity: which parts are tied to a trend that will date them.
-
-For each: the scenario concretely, what actually happens to the strategy, a severity, whether it survived intact, and what to do about it. Be specific about the failure — "could be confusing" is not a finding; "read aloud it is heard as a competitor's name" is.`,
+  stressTests: STRESS_INSTRUCTIONS,
 
   consistency: `# This step: consistency
 
@@ -252,6 +304,8 @@ For each contradiction found: which sections disagree, the conflict stated concr
 Lock the package. Everything here must already be present in the state or follow directly from it; this step consolidates and completes, it does not introduce new strategy.
 
 Choose the name and the tagline. The naming territories and tagline directions in shape are the candidates, and the choice is yours to make here — commit to one of each, from what is already explored, rather than inventing a new one at the last moment. If none of the names truly fits, take the strongest territory and name from inside it.
+
+Every stress-test finding at critical or high severity has already been resolved or explicitly accepted before this step runs — the pipeline will not reach here otherwise. Read them anyway: an accepted finding is a known trade-off you should not make worse, and a resolved one tells you what the fix was meant to be.
 
 Carry the positioning statement through from the chosen strategy. Where a stress test or consistency issue recommended a change and that change is within this step's reach — wording, emphasis, a visual caution, avoiding a name that misreads — apply it and let the resolution show in the package. Where it is not, leave it be rather than quietly redesigning.
 
@@ -481,4 +535,60 @@ ${serializedState}
 </brand_state>
 
 Derive the \`${section}\` section. Return only that section, matching the required schema. Do not restate or revise any section already present above.`;
+}
+
+export type StressPromptInput = {
+  /** The chosen strategy, serialized. */
+  selectedStrategy: string;
+  /** The rest of the state, serialized, with unpopulated sections omitted. */
+  brandState: string;
+  /** Which of the five tests to run. */
+  scope: readonly string[];
+  /** Sections that are not populated yet, so the model knows what it cannot test. */
+  missingSections: readonly string[];
+};
+
+/** The STRESS TEST user turn. */
+export function buildStressPrompt(input: StressPromptInput): string {
+  const sections: string[] = [
+    `Here is the strategy that was chosen. This is what you are testing — not the alternatives it beat.
+
+<selected_strategy>
+${input.selectedStrategy}
+</selected_strategy>`,
+    `Here is the rest of the brand state as it currently stands.
+
+<brand_state>
+${input.brandState}
+</brand_state>`,
+  ];
+
+  if (input.missingSections.length > 0) {
+    sections.push(`These sections have not been derived yet: ${input.missingSections.join(', ')}.
+
+Do not invent findings against them. Where a test depends on one, report what you can and mark that test partial or not-testable in evaluatedTypes, naming what was missing.`);
+  }
+
+  sections.push(`Run these tests: ${input.scope.join(', ')}.
+
+Return a finding for every real problem you find, and an entry in evaluatedTypes for each test above — including the ones that found nothing, so the reader can tell a pass from a test that could not run.`);
+
+  return sections.join('\n\n');
+}
+
+/**
+ * The retry turn, when findings came back without usable evidence or impact.
+ *
+ * The offending findings are quoted back individually. A general "cite your
+ * evidence" reliably produces findings that name a section without naming the
+ * fields, which is the same unauditable output one step removed.
+ */
+export function buildStressRetryPrompt(original: string, problems: readonly string[]): string {
+  return `${original}
+
+A previous attempt returned findings that do not meet the evidence bar:
+
+${problems.map((problem) => `- ${problem}`).join('\n')}
+
+Return the full set of findings again, with those corrected. Cite actual BrandState field paths in evidence — \`shape.personality\`, \`discovery.targetAudience\` — not just a section name or a description of where to look. Make impact a real downstream consequence rather than the issue said again in different words. Do not drop a finding to avoid fixing it, and do not add new ones.`;
 }

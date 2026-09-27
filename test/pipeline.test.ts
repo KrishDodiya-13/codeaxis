@@ -9,6 +9,7 @@ import {
   runStep,
 } from '../src/steps.ts';
 import { selectStrategy } from '../src/battle.ts';
+import { FinalizationBlockedError, acknowledgeFinding, blockingFindings } from '../src/stress.ts';
 import type { SectionDeriver } from '../src/client.ts';
 import type { BrandState } from '../src/types.ts';
 import { StubDeriver, completeState, project, sectionFixtures } from './fixtures.ts';
@@ -25,28 +26,50 @@ async function runWithSelection(
   initial: BrandState,
   direction = 'TRUST',
 ) {
+  // Decision 1: which direction. The pipeline refuses to make it.
   const first = await runPipeline(deriver, initial, { until: 'strategyOptions' });
   const chosen: BrandState = {
     ...first.state,
     selectedStrategy: selectStrategy(first.state.strategyOptions, direction),
   };
-  const second = await runPipeline(deriver, chosen);
+
+  // Decision 2: what to do about the blocking stress-test findings. The pipeline
+  // refuses to finalize while any are open, so a run to completion needs a person
+  // to have either fixed or accepted them.
+  const middle = await runPipeline(deriver, chosen, { until: 'consistency' });
+  let accepted: BrandState = middle.state;
+  for (const finding of blockingFindings(accepted.stressTests)) {
+    accepted = {
+      ...accepted,
+      stressTests: acknowledgeFinding(accepted.stressTests, {
+        type: finding.type,
+        issue: finding.issue,
+      }),
+    };
+  }
+
+  const last = await runPipeline(deriver, accepted);
+  const passes = [first, middle, last];
 
   return {
-    state: second.state,
-    // The second pass skips what the first already did, except the selection
-    // itself — which the human made, so it counts as a step that happened.
+    state: last.state,
+    // Steps skipped on a later pass because an earlier one did them are dropped,
+    // except selectedStrategy, which the human did rather than the pipeline.
     steps: [
       ...first.steps,
-      ...second.steps.filter((step) => step.skipped !== true || step.section === 'selectedStrategy'),
+      ...middle.steps.filter((step) => step.skipped !== true || step.section === 'selectedStrategy'),
+      ...last.steps.filter((step) => step.skipped !== true),
     ],
-    snapshots: [...first.snapshots, ...second.snapshots],
-    usage: {
-      inputTokens: first.usage.inputTokens + second.usage.inputTokens,
-      outputTokens: first.usage.outputTokens + second.usage.outputTokens,
-      cacheCreationTokens: first.usage.cacheCreationTokens + second.usage.cacheCreationTokens,
-      cacheReadTokens: first.usage.cacheReadTokens + second.usage.cacheReadTokens,
-    },
+    snapshots: passes.flatMap((pass) => pass.snapshots),
+    usage: passes.reduce(
+      (total, pass) => ({
+        inputTokens: total.inputTokens + pass.usage.inputTokens,
+        outputTokens: total.outputTokens + pass.usage.outputTokens,
+        cacheCreationTokens: total.cacheCreationTokens + pass.usage.cacheCreationTokens,
+        cacheReadTokens: total.cacheReadTokens + pass.usage.cacheReadTokens,
+      }),
+      { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+    ),
   };
 }
 
@@ -60,14 +83,18 @@ describe('runStep', () => {
     assert.deepEqual(populatedSections(state), ['discovery']);
   });
 
-  it('unwraps the stressTests array from its schema wrapper', async () => {
+  it('stores the stress-test findings as the section, dropping the derived summary', async () => {
     const deriver = new StubDeriver();
-    let state = completeState();
+    const state = completeState();
     state.stressTests = [];
 
     const result = await runStep(deriver, state, 'stressTests');
+
     assert.ok(Array.isArray(result.state.stressTests));
     assert.equal(result.state.stressTests.length, sectionFixtures.stressTests.length);
+    // The summary and the evaluation notes are recomputed, never persisted.
+    assert.equal((result.state as Record<string, unknown>).summary, undefined);
+    assert.equal((result.state as Record<string, unknown>).evaluatedTypes, undefined);
   });
 
   it('refuses to run before its dependencies are derived', async () => {
@@ -121,7 +148,13 @@ describe('missingDependencies', () => {
 
   it('lists every unmet dependency for a late step', () => {
     const missing = missingDependencies(createInitialState(project), 'finalBrand');
-    assert.deepEqual(missing, ['selectedStrategy', 'visualDirection', 'consistency']);
+    assert.deepEqual(missing, [
+      'selectedStrategy',
+      'shape',
+      'visualDirection',
+      'stressTests',
+      'consistency',
+    ]);
   });
 });
 
@@ -299,11 +332,14 @@ describe('rollbackTo', () => {
   it('produces a state the pipeline will resume from the right point', async () => {
     const deriver = new StubDeriver();
     const rolled = rollbackTo(completeState(), 'visualDirection');
-    await runPipeline(deriver, rolled);
+
+    // It stops at the finalization gate, because the stress test it just re-ran
+    // reported a high-severity finding that nobody has dealt with yet.
+    await assert.rejects(() => runPipeline(deriver, rolled), FinalizationBlockedError);
 
     assert.deepEqual(
       deriver.calls.map((call) => call.section),
-      ['visualDirection', 'stressTests', 'consistency', 'finalBrand'],
+      ['visualDirection', 'stressTests', 'consistency'],
     );
   });
 

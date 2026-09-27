@@ -59,6 +59,7 @@ async function postTo(
 const post = (body: unknown, raw?: string) => postTo('/api/discover', body, raw);
 const postPosition = (body: unknown, raw?: string) => postTo('/api/position', body, raw);
 const postBattle = (body: unknown, raw?: string) => postTo('/api/battle', body, raw);
+const postStress = (body: unknown, raw?: string) => postTo('/api/stress-test', body, raw);
 
 /** A settled discovery, so the POSITION guard lets it through. */
 function settledDiscovery() {
@@ -401,6 +402,124 @@ describe('POST /api/battle', () => {
   });
 });
 
+describe('POST /api/stress-test', () => {
+  it('returns findings, a summary and the evaluated types', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postStress({ brandState: completeState() });
+
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(json.tests));
+    assert.deepEqual(Object.keys(json).sort(), ['evaluatedTypes', 'summary', 'tests']);
+  });
+
+  it('computes the summary and the gate from the findings', async () => {
+    deriver = new StubDeriver();
+    const { json } = await postStress({ brandState: completeState() });
+
+    assert.deepEqual(Object.keys(json.summary).sort(), [
+      'blocksFinalization',
+      'critical',
+      'high',
+      'low',
+      'medium',
+    ]);
+    // The fixture carries one high finding, so the gate is closed.
+    assert.equal(json.summary.high, 1);
+    assert.equal(json.summary.blocksFinalization, true);
+  });
+
+  it('reports evaluatedTypes as flat strings, one per test', async () => {
+    deriver = new StubDeriver();
+    const { json } = await postStress({ brandState: completeState() });
+
+    assert.equal(Object.keys(json.evaluatedTypes).length, 5);
+    for (const value of Object.values(json.evaluatedTypes)) {
+      assert.equal(typeof value, 'string');
+    }
+  });
+
+  it('does not return the structured evaluations, which are library-only', async () => {
+    deriver = new StubDeriver();
+    const { json } = await postStress({ brandState: completeState() });
+    assert.equal(json.evaluations, undefined);
+  });
+
+  it('honours a narrowed scope', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postStress({
+      brandState: completeState(),
+      scope: ['cliché'],
+    });
+
+    assert.equal(status, 200);
+    assert.deepEqual(Object.keys(json.evaluatedTypes), ['cliché']);
+  });
+
+  it('rejects an unknown test type with a 400', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postStress({ brandState: completeState(), scope: ['vibes'] });
+
+    assert.equal(status, 400);
+    assert.match(json.error, /Unknown test type/);
+  });
+
+  it('rejects a missing brandState with a 400', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postStress({});
+
+    assert.equal(status, 400);
+    assert.match(json.error, /"brandState" is required/);
+  });
+
+  it('rejects a state with no chosen direction with a 400', async () => {
+    deriver = new StubDeriver();
+    const state = completeState();
+    delete state.selectedStrategy;
+
+    const { status, json } = await postStress({ brandState: state });
+    assert.equal(status, 400);
+    assert.match(json.error, /Choose a direction first/);
+  });
+
+  it('reports findings that cannot be audited as a 502', async () => {
+    const unusable = {
+      tests: [
+        {
+          type: 'cliché',
+          severity: 'low',
+          issue: 'the copy is generic',
+          evidence: 'the tone feels off',
+          impact: 'it reads as generic',
+          recommendation: 'rewrite it',
+        },
+      ],
+      evaluatedTypes: [{ type: 'cliché', status: 'evaluated' }],
+    };
+    deriver = {
+      deriveSection: async () => ({
+        value: unusable,
+        usage: { inputTokens: 1, outputTokens: 1, cacheCreationTokens: 0, cacheReadTokens: 0 },
+      }),
+    } as never;
+
+    const { status, json } = await postStress({ brandState: completeState(), scope: ['cliché'] });
+
+    assert.equal(status, 502);
+    assert.match(json.error, /cannot be audited/);
+    assert.match(json.problems[0], /cites no BrandState field path/);
+  });
+
+  it('logs the finding counts and whether the gate is closed', async () => {
+    deriver = new StubDeriver();
+    logs.length = 0;
+    await postStress({ brandState: completeState() });
+
+    assert.match(logs[0]!, /POST \/api\/stress-test 200/);
+    assert.match(logs[0]!, /findings=3/);
+    assert.match(logs[0]!, /blocks=true/);
+  });
+});
+
 describe('routing', () => {
   it('rejects a GET on the endpoint with a 405 and an Allow header', async () => {
     const response = await fetch(`${baseUrl}/api/discover`);
@@ -416,6 +535,7 @@ describe('routing', () => {
     assert.match(json.error, /POST \/api\/discover/);
     assert.match(json.error, /POST \/api\/position/);
     assert.match(json.error, /POST \/api\/battle/);
+    assert.match(json.error, /POST \/api\/stress-test/);
   });
 
   it('rejects a GET on the position endpoint with a 405', async () => {

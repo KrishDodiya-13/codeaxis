@@ -10,7 +10,8 @@ step four, instead of being re-derived and quietly contradicted.
 Built from [docs/brandstate-spec.md](docs/brandstate-spec.md) (Phase 1), the Phase 2
 DISCOVER spec ([docs/discover-endpoint.md](docs/discover-endpoint.md)) and the Phase 3
 POSITION spec ([docs/position-endpoint.md](docs/position-endpoint.md)) and the Phase 4
-BRAND BATTLE spec ([docs/battle-endpoint.md](docs/battle-endpoint.md)).
+BRAND BATTLE spec ([docs/battle-endpoint.md](docs/battle-endpoint.md)) and the Phase 5
+STRESS TEST spec ([docs/stress-test-endpoint.md](docs/stress-test-endpoint.md)).
 
 ## Install
 
@@ -192,6 +193,58 @@ strategy nobody selected.
 Full details, including the four checks and the pipeline reordering, are in
 [docs/battle-endpoint.md](docs/battle-endpoint.md).
 
+## The STRESS TEST endpoint
+
+Phase 5 is the only step whose job is to say *this is wrong*. Everything before it
+generates; if this one is weak, every upstream mistake flows into the finished brand
+unexamined. It is the last checkpoint before commitment, so it gates `finalBrand`.
+
+```bash
+curl -s localhost:3000/api/stress-test -H 'content-type: application/json'   -d '{"brandState":{...}}'
+```
+
+Five tests run against the chosen strategy and the state around it: `cliché`,
+`audienceMismatch`, `differentiation`, `contradiction`, `messaging`. Each finding
+carries a severity (`critical` through `low`), the exact `BrandState` fields that
+triggered it, what actually breaks downstream, and a fix someone could carry out.
+
+An empty findings list is a success. The prompt says so explicitly, because padding
+the output with nitpicks trains the reader to skim past the real findings.
+
+Two rules are enforced rather than requested. Evidence has to cite real field paths —
+`shape.personality`, not "the tone feels off" — and `impact` has to be a downstream
+consequence rather than the issue restated. Failing either triggers a retry with the
+offending findings quoted back; still failing is an error, because unauditable findings
+make the whole phase decorative.
+
+The summary and the gate are computed from the findings, never asked of the model:
+
+```json
+"summary": { "critical": 0, "high": 1, "medium": 2, "low": 1, "blocksFinalization": true }
+```
+
+### The gate
+
+`finalBrand` will not populate while a finding at `critical` or `high` is still open —
+and the pipeline refuses *before* calling the model, so a blocked run costs nothing.
+Getting past it is a human act:
+
+```bash
+brandstate stress-test                        # run it, record the findings
+brandstate findings                           # what is open, and what blocks
+brandstate acknowledge contradiction          # accept a trade-off knowingly
+brandstate stress-test --scope contradiction  # or fix it and re-test just that type
+```
+
+A scoped re-run replaces only the types it covered, so decisions already recorded
+against other findings survive. `shouldRerunStressTests(before, after)` maps an edit
+to the narrowest scope that covers it.
+
+A full `brandstate run` therefore has two human checkpoints: choosing a direction, and
+dealing with blocking findings. That is the point.
+
+Full details in [docs/stress-test-endpoint.md](docs/stress-test-endpoint.md).
+
 ## Use it as a library
 
 ```ts
@@ -260,6 +313,12 @@ endpoints share one prompt and one schema each and cannot drift apart. A pipelin
 takes the first pass only: it cannot answer discovery's questions, so it proceeds past
 them and records what it assumed, and anything unresolved arrives in the state as
 `openQuestions`.
+
+**The stress test gates finalization.** `finalBrand` throws rather than warns while a
+critical or high finding is open, and it throws before spending a model call. Findings
+are only cleared by a person — fixed and re-tested, or explicitly acknowledged as an
+accepted trade-off. The summary and the gate flag are recomputed from the findings
+rather than stored, so they cannot go stale against them.
 
 **The chosen direction gates what comes after it.** `strategyOptions` holds every
 candidate; `selectedStrategy` points at one rather than copying it. Once chosen,
@@ -346,7 +405,7 @@ departing from it; the field names and section structure are unchanged.
 ## Tests
 
 ```bash
-npm test        # 302 tests, no API key and no network
+npm test        # 392 tests, no API key and no network
 npm run typecheck   # covers src and test
 ```
 
@@ -368,6 +427,12 @@ selection really maximises the minimum spread (verified exhaustively against eve
 combination), all four distinctness checks plus the risk and length rules, that only
 the later of two colliding strategies is blamed, the targeted rebuild and its failure
 mode, and that selection is a pointer carrying no copy.
+`test/stress.test.ts` covers STRESS TEST: the field-path check in both directions
+(including indexed paths), the impact-restatement check, the summary and gate
+arithmetic across every status and severity, scoped runs dropping out-of-scope
+findings, an unreported test type recording as not-testable rather than as a pass, the
+retry and its failure mode, the re-run trigger map, and that the gate refuses without
+calling the model.
 `test/server.test.ts` starts a real server on an ephemeral port and drives it over
 HTTP, covering routing, every status code, that a 500 does not leak internals, and
 that no strategy comes back carrying a score or a rank.

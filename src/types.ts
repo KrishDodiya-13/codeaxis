@@ -129,17 +129,65 @@ export type SelectedStrategy = {
   reasonChosen?: string;
 };
 
+/**
+ * The five stress-test categories.
+ *
+ * Kept as a runtime constant because the schemas, the prompts and the `scope`
+ * parameter all need the same list, and a second copy would drift.
+ */
+export const TEST_TYPES = [
+  'cliché',
+  'audienceMismatch',
+  'differentiation',
+  'contradiction',
+  'messaging',
+] as const;
+
+export type TestType = (typeof TEST_TYPES)[number];
+
+/** How serious a finding is. `critical` means unusable as-is. */
+export type Severity = 'low' | 'medium' | 'high' | 'critical';
+
+/**
+ * What a team decided to do about a finding.
+ *
+ * `acknowledged` is the important one: not every finding has to be fixed, and a
+ * team that knowingly accepts a trade-off needs somewhere to record that — so the
+ * finding neither blocks forever nor silently disappears on the next run.
+ */
+export type FindingStatus = 'open' | 'acknowledged' | 'resolved';
+
+/** One problem found in the brand as it stands. */
 export type StressTest = {
-  /** What was tested, e.g. "misreading", "competitor collision", "scale". */
-  dimension: string;
-  /** The specific scenario the strategy was put under. */
-  scenario: string;
-  /** What happened when the strategy met the scenario. */
-  finding: string;
-  severity: 'low' | 'medium' | 'high';
-  /** How to resolve or absorb the finding. */
+  type: TestType;
+  severity: Severity;
+  /** A named problem, not "this could be stronger". */
+  issue: string;
+  /** The exact `BrandState` field paths that triggered the flag. */
+  evidence: string;
+  /** What actually goes wrong downstream if this is not fixed. */
+  impact: string;
+  /** A concrete fix a human could carry out. */
   recommendation: string;
-  passed: boolean;
+  /** Absent means `open`. */
+  status?: FindingStatus;
+};
+
+/** Whether a test type could actually be run against the state it was given. */
+export type EvaluationStatus = 'evaluated' | 'partial' | 'not-testable';
+
+/**
+ * What happened for one test type.
+ *
+ * This exists so a caller can tell "passed" from "had nothing to check yet" — a
+ * distinction that matters when `shape` and `visualDirection` are still empty and
+ * the contradiction tests have little to work with.
+ */
+export type TypeEvaluation = {
+  type: TestType;
+  status: EvaluationStatus;
+  /** Why, when the status is not a plain `evaluated`. */
+  note?: string;
 };
 
 export type ConsistencyIssue = {

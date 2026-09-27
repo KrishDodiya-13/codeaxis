@@ -18,7 +18,7 @@ import {
   DiscoverResultSchema,
   DiscoverySchema,
   PositionResultSchema,
-  StressTestsResultSchema,
+  StressTestResultSchema,
   sectionSchemas,
 } from '../src/schemas.ts';
 import { SECTION_ORDER } from '../src/state.ts';
@@ -142,7 +142,7 @@ describe('the request BrandClient builds', () => {
       discovery: DiscoverResultSchema,
       positioning: PositionResultSchema,
       strategyOptions: BattleResultSchema,
-      stressTests: StressTestsResultSchema,
+      stressTests: StressTestResultSchema,
       shape: sectionSchemas.shape,
       visualDirection: sectionSchemas.visualDirection,
       consistency: sectionSchemas.consistency,

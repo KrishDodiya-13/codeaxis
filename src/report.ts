@@ -5,6 +5,7 @@
  * are left out rather than shown empty.
  */
 import { isSectionPopulated, populatedSections, resolveSelectedStrategy } from './state.ts';
+import { summarize } from './stress.ts';
 import type { BrandState } from './types.ts';
 
 export function renderMarkdown(state: BrandState): string {
@@ -107,15 +108,36 @@ export function renderMarkdown(state: BrandState): string {
   }
 
   if (state.stressTests.length > 0) {
+    const summary = summarize(state.stressTests);
+
     out.push('## Stress tests', '');
-    out.push('| Dimension | Severity | Held up | Finding | Recommendation |');
-    out.push('|---|---|---|---|---|');
-    for (const t of state.stressTests) {
-      out.push(
-        `| ${cell(t.dimension)} | ${t.severity} | ${t.passed ? 'yes' : 'no'} | ${cell(t.finding)} | ${cell(t.recommendation)} |`,
-      );
+    out.push(
+      `${summary.critical} critical, ${summary.high} high, ${summary.medium} medium, ${summary.low} low.`,
+      '',
+    );
+    out.push(
+      summary.blocksFinalization
+        ? '**Finalization is blocked** while a critical or high finding is still open.'
+        : 'Nothing open at critical or high — the brand can be finalized.',
+      '',
+    );
+
+    // Severity first, so the things that block come first; findings of equal
+    // severity keep the order they were reported in.
+    const order: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    const sorted = [...state.stressTests].sort(
+      (a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9),
+    );
+
+    for (const finding of sorted) {
+      const status = finding.status ?? 'open';
+      const flag = status === 'open' ? '' : ` _(${status})_`;
+      out.push(`### ${finding.severity} · ${finding.type}${flag}`, '');
+      out.push(finding.issue, '');
+      out.push(`**Evidence.** ${finding.evidence}`, '');
+      out.push(`**Impact.** ${finding.impact}`, '');
+      out.push(`**Recommendation.** ${finding.recommendation}`, '');
     }
-    out.push('');
   }
 
   if (isSectionPopulated(state, 'consistency')) {

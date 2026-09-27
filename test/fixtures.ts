@@ -8,6 +8,7 @@
 import type { DeriveOptions, SectionDeriver, Usage } from '../src/client.ts';
 import type { DiscoverResult } from '../src/discover.ts';
 import { toStrategyOption } from '../src/battle.ts';
+import { TEST_TYPES } from '../src/types.ts';
 import type { StrategyCandidate } from '../src/battle.ts';
 import { hashDiscovery } from '../src/position.ts';
 import type { PositionResult } from '../src/position.ts';
@@ -231,30 +232,45 @@ const selectedStrategy: SelectedStrategy = {
   reasonChosen: 'The audience has been burned once; reassurance beats ambition here.',
 };
 
+/**
+ * Findings that pass the auditability checks: every evidence cites field paths, and
+ * no impact merely restates its issue.
+ */
 const stressTests: StressTest[] = [
   {
-    dimension: 'misreading',
-    scenario: 'Heard aloud in a noisy room.',
-    finding: 'Mistaken for "throughput" by listeners in operations roles.',
-    severity: 'medium',
-    recommendation: 'Always pair the name with the tagline on first use.',
-    passed: true,
-  },
-  {
-    dimension: 'competitor collision',
-    scenario: 'An incumbent adds a delivery-record import next quarter.',
-    finding: 'The differentiator narrows to depth of the record rather than its existence.',
+    type: 'contradiction',
     severity: 'high',
-    recommendation: 'Move proof toward the pattern found, not the import.',
-    passed: false,
+    issue:
+      'The personality is unsentimental and exacting, while the chosen TRUST strategy leans on reassurance, so the voice and the strategic bet pull in opposite directions.',
+    evidence:
+      'shape.personality (["Exacting", "Plain-spoken", "Unsentimental about craft"]) vs selectedStrategy.direction (TRUST) and strategyOptions[2].positioning',
+    impact:
+      'Onboarding copy written to reassure a cautious owner will read as cold next to marketing that promises nothing is invented, and readers will not know which brand they are dealing with.',
+    recommendation:
+      'Add a warmth trait to shape.personality that survives the exacting register, such as "steady", or revisit whether TRUST is the right direction given the voice already drafted.',
   },
   {
-    dimension: 'scale',
-    scenario: 'Expanding beyond agencies to in-house teams.',
-    finding: 'The name survives; the tagline assumes client work.',
+    type: 'differentiation',
+    severity: 'medium',
+    issue:
+      'Building an offer from the delivery record is a real advantage over a blank template, but a competitor could import the same records and claim it within a quarter.',
+    evidence:
+      'positioning.differentiator ("Built from the delivery record rather than from a blank template")',
+    impact:
+      'An agency comparing two tools side by side next year may see no reason to choose this one, which erodes the competitive angle after launch rather than at launch.',
+    recommendation:
+      'Rewrite positioning.differentiator around the pattern the tool finds in the record, not the fact that it reads the record at all.',
+  },
+  {
+    type: 'cliché',
     severity: 'low',
-    recommendation: 'Keep the tagline scoped to the agency segment.',
-    passed: true,
+    issue:
+      'The mood copy reaches for calm-system language that would fit almost any operations product.',
+    evidence: 'visualDirection.mood ("The calm of a system that already knows the answer")',
+    impact:
+      'A designer reading only this line has nothing specific to reach for, so the visual work will drift toward generic enterprise minimalism.',
+    recommendation:
+      'Rewrite visualDirection.mood around what the agency owner feels on seeing their own repeated work named back to them.',
   },
 ];
 
@@ -340,12 +356,14 @@ export class StubDeriver implements SectionDeriver {
   ): Promise<{ value: T; usage: Usage }> {
     this.calls.push({ section, serializedState, userPrompt: options?.userPrompt });
 
-    // Two sections are not requested in their BrandState shape: stressTests is
-    // wrapped in an object because a format needs an object root, and discovery
-    // is requested as a DISCOVER result and mapped afterwards.
+    // Several sections are not requested in their BrandState shape: each endpoint
+    // step asks for its own result shape and maps it afterwards.
     const raw =
       section === 'stressTests'
-        ? { stressTests: sectionFixtures.stressTests }
+        ? {
+            tests: sectionFixtures.stressTests,
+            evaluatedTypes: TEST_TYPES.map((type) => ({ type, status: 'evaluated' as const })),
+          }
         : section === 'discovery'
           ? discoverResult
           : section === 'positioning'

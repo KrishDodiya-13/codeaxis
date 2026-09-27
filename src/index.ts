@@ -19,6 +19,8 @@ export type {
   VisualDirection,
 } from './types.ts';
 
+export { TEST_TYPES } from './types.ts';
+
 export {
   BrandStateFileSchema,
   BrandStateSchema,
@@ -33,7 +35,9 @@ export {
   ShapeSchema,
   StrategyOptionSchema,
   BattleResultSchema,
+  StressTestResultSchema,
   StressTestSchema,
+  TypeEvaluationSchema,
   VisualDirectionSchema,
   parseBrandState,
   parseCompleteBrandState,
@@ -158,6 +162,31 @@ export type {
   DistinctnessThresholds,
   StrategyCandidate,
 } from './battle.ts';
+
+export {
+  BLOCKING_SEVERITIES,
+  FinalizationBlockedError,
+  StressTestInputError,
+  UnauditableFindingsError,
+  acknowledgeFinding,
+  blockingFindings,
+  canFinalize,
+  citesFieldPath,
+  findUnauditableFindings,
+  missingSections,
+  openFindings,
+  renderEvaluatedTypes,
+  shouldRerunStressTests,
+  stressTest,
+  summarize,
+  validateStressTestRequest,
+} from './stress.ts';
+export type {
+  StressSummary,
+  StressTestOptions,
+  StressTestRequest,
+  StressTestResponse,
+} from './stress.ts';
 
 export { createDiscoverServer, listen } from './server.ts';
 export type { ServerOptions } from './server.ts';

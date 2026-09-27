@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 import { DIRECTIONS } from './archetypes.ts';
+import { TEST_TYPES } from './types.ts';
 import type { BrandState, BrandStateSection } from './types.ts';
 
 /**
@@ -319,13 +320,64 @@ export const SelectedStrategySchema = z.object({
   reasonChosen: text('Why this one was picked over the others, if a reason was given.').optional(),
 });
 
+/**
+ * One stress-test finding.
+ *
+ * Every field here is doing work that makes the finding auditable rather than a
+ * vibe-check: `evidence` names the fields that triggered it, `impact` says what
+ * actually breaks, and `recommendation` is something a person can carry out.
+ */
 export const StressTestSchema = z.object({
-  dimension: text('What was tested, e.g. "misreading", "competitor collision", "scale".'),
-  scenario: text('The specific scenario the strategy was put under.'),
-  finding: text('What happened when the strategy met the scenario.'),
-  severity: severity(),
-  recommendation: text('How to resolve or absorb the finding.'),
-  passed: z.boolean().describe('Whether the strategy survived this scenario intact.'),
+  type: z.enum(TEST_TYPES).describe('Which of the five categories this finding belongs to.'),
+  severity: z
+    .enum(['low', 'medium', 'high', 'critical'])
+    .describe(
+      'critical = the brand is unusable as-is. high = serious risk to effectiveness or honesty, fix before finalizing. medium = a real weakness, not launch-blocking alone. low = minor polish. Rate against these, not by how important you want the finding to sound.',
+    ),
+  issue: text(
+    'A specific, named problem. "This could be stronger" is not a finding — say what is wrong.',
+  ),
+  evidence: text(
+    'The exact BrandState field paths that triggered this, e.g. "discovery.targetAudience vs selectedStrategy.audienceFit". Quote the values where it helps. A finding that does not cite fields cannot be checked or fixed, so this is required.',
+  ),
+  impact: text(
+    'What actually goes wrong downstream if this is not fixed. A real consequence, not a restatement of the issue: "first-time users will feel unqualified and churn before posting a profile", not "this is a problem".',
+  ),
+  recommendation: text(
+    'A concrete fix, naming which field to change and roughly how. Not "make the differentiator stronger".',
+  ),
+  status: z
+    .enum(['open', 'acknowledged', 'resolved'])
+    .describe('Set by a human after the fact, not by you. Leave it out.')
+    .optional(),
+});
+
+export const TypeEvaluationSchema = z.object({
+  type: z.enum(TEST_TYPES),
+  status: z
+    .enum(['evaluated', 'partial', 'not-testable'])
+    .describe(
+      'evaluated = you could run this test properly. partial = you could only run it against some of what it needs. not-testable = the state it depends on is not there yet. Be honest: reporting "evaluated" for a test you could not run gives a false sense of safety.',
+    ),
+  note: text('Why, when the status is not a plain evaluated. Say what was missing.').optional(),
+});
+
+/**
+ * What the model returns.
+ *
+ * The summary is deliberately absent: counts and the finalization gate are computed
+ * from the findings in code, so they cannot disagree with the findings they
+ * describe.
+ */
+export const StressTestResultSchema = z.object({
+  tests: z
+    .array(StressTestSchema)
+    .describe(
+      'The findings. An empty array is a valid and good result — it means nothing failed. Do not pad this with manufactured nitpicks to look thorough.',
+    ),
+  evaluatedTypes: z
+    .array(TypeEvaluationSchema)
+    .describe('One entry per test type you were asked to run, saying whether you could run it.'),
 });
 
 export const ConsistencyIssueSchema = z.object({
@@ -366,14 +418,6 @@ export const FinalBrandSchema = z.object({
     .array(text())
     .min(2)
     .describe('Where and how the brand shows up, e.g. "landing page hero".'),
-});
-
-/**
- * Array sections are wrapped in an object: a structured-output format needs an
- * object at its root, so a bare array cannot be requested directly.
- */
-export const StressTestsResultSchema = z.object({
-  stressTests: z.array(StressTestSchema).min(3).describe('One entry per dimension tested.'),
 });
 
 /**
@@ -481,12 +525,13 @@ export const BrandStateFileSchema = z.object({
     .optional(),
   stressTests: z.array(
     z.object({
-      dimension: looseText,
-      scenario: looseText,
-      finding: looseText,
-      severity: severity(),
+      type: looseText,
+      severity: looseText,
+      issue: looseText,
+      evidence: looseText,
+      impact: looseText,
       recommendation: looseText,
-      passed: z.boolean(),
+      status: looseText.optional(),
     }),
   ),
   consistency: z.object({

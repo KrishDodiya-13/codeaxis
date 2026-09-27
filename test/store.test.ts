@@ -99,14 +99,39 @@ describe('renderMarkdown', () => {
     assert.match(markdown, /Nothing derived yet/);
   });
 
-  it('escapes pipes so a finding cannot break the stress-test table', () => {
-    const state = completeState();
-    state.stressTests[0]!.finding = 'reads as a | b';
+  it('reports the severity counts and the finalization gate', () => {
+    const markdown = renderMarkdown(completeState());
 
-    const row = renderMarkdown(state)
+    assert.match(markdown, /0 critical, 1 high, 1 medium, 1 low\./);
+    assert.match(markdown, /\*\*Finalization is blocked\*\*/);
+  });
+
+  it('says the brand can be finalized once nothing blocking is open', () => {
+    const state = completeState();
+    state.stressTests = state.stressTests.map((finding) =>
+      finding.severity === 'high' ? { ...finding, status: 'acknowledged' as const } : finding,
+    );
+
+    const markdown = renderMarkdown(state);
+    assert.match(markdown, /the brand can be finalized/);
+    assert.doesNotMatch(markdown, /\*\*Finalization is blocked\*\*/);
+  });
+
+  it('orders findings by severity, so what blocks comes first', () => {
+    const markdown = renderMarkdown(completeState());
+    const headings = markdown
       .split('\n')
-      .find((line) => line.includes('reads as a'))!;
-    assert.match(row, /a \\\| b/);
-    assert.equal(row.split(/(?<!\\)\|/).length - 1, 6);
+      .filter((line) => line.startsWith('### '))
+      .filter((line) => /critical|high|medium|low/.test(line));
+
+    assert.match(headings[0]!, /^### high/);
+    assert.match(headings[headings.length - 1]!, /^### low/);
+  });
+
+  it('marks a finding that was acknowledged rather than fixed', () => {
+    const state = completeState();
+    state.stressTests[0] = { ...state.stressTests[0]!, status: 'acknowledged' };
+
+    assert.match(renderMarkdown(state), /_\(acknowledged\)_/);
   });
 });
