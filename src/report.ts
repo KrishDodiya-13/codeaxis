@@ -10,10 +10,11 @@ import type { BrandState } from './types.ts';
 
 export function renderMarkdown(state: BrandState): string {
   const out: string[] = [];
-  const heading = state.finalBrand?.name ?? 'Brand in progress';
+  const heading = state.finalBrand?.name ?? state.naming.selectedName ?? 'Brand in progress';
   out.push(`# ${heading}`, '');
 
-  if (state.finalBrand) out.push(`> ${state.finalBrand.tagline}`, '');
+  const tagline = state.finalBrand?.tagline ?? state.naming.tagline.selected;
+  if (tagline) out.push(`> ${tagline}`, '');
 
   out.push('## Project', '');
   out.push(`- **Idea:** ${state.project.idea}`);
@@ -43,40 +44,46 @@ export function renderMarkdown(state: BrandState): string {
     out.push(...list('Rationale', p.rationale));
   }
 
-  if (isSectionPopulated(state, 'shape')) {
-    const s = state.shape;
-    out.push('## Shape', '');
-    out.push(...list('Personality', s.personality));
-    out.push(...list('Principles', s.principles));
+  if (isSectionPopulated(state, 'personality')) {
+    const p = state.personality;
+    out.push('## Personality', '');
+    if (p.archetype) out.push(`**Archetype.** ${p.archetype}`, '');
+    out.push(...list('Traits', p.traits));
+    out.push(...list('Explicitly not', p.antiTraits));
+    out.push(...list('Values', p.values));
+    out.push(...list('Rationale', p.rationale));
+  }
 
-    if (s.namingTerritories.length > 0) {
-      out.push('### Naming territories', '');
-      for (const t of s.namingTerritories) {
-        out.push(`**${t.name}.** ${t.rationale}`);
-        out.push(`Examples: ${t.examples.join(', ')}`, '');
+  if (isSectionPopulated(state, 'naming')) {
+    const n = state.naming;
+    out.push('## Naming', '');
+    if (n.selectedName) out.push(`**Name.** ${n.selectedName}`, '');
+    if (n.tagline.selected) out.push(`**Tagline.** ${n.tagline.selected}`, '');
+    out.push(...list('Territories', n.territories));
+
+    if (n.candidates.length > 0) {
+      out.push('### Candidates', '');
+      for (const candidate of n.candidates) {
+        const mark = candidate.name === n.selectedName ? ' — chosen' : '';
+        out.push(`**${candidate.name}**${mark} (${candidate.territory})`, '');
+        out.push(...list('For', candidate.pros));
+        out.push(...list('Against', candidate.cons));
       }
     }
 
-    if (s.taglineDirections.length > 0) {
-      out.push('### Tagline directions', '');
-      for (const t of s.taglineDirections) {
-        out.push(`- **${t.tagline}** — ${t.rationale}${fit(t.personalityFit)}`);
-      }
-      out.push('');
-    }
-
-    if (s.messagingHierarchy.length > 0) {
-      out.push('### Messaging hierarchy', '');
-      for (const m of s.messagingHierarchy) {
-        out.push(`- **${m.level}** (${m.audience}): ${m.message}`);
-      }
-      out.push('');
+    if (n.tagline.candidates.length > 0) {
+      out.push(...list('Tagline candidates', n.tagline.candidates));
     }
   }
 
   if (isSectionPopulated(state, 'visualDirection')) {
     out.push('## Visual direction', '');
     out.push(...renderVisual(state.visualDirection));
+  }
+
+  if (isSectionPopulated(state, 'voice')) {
+    out.push('## Voice', '');
+    out.push(...renderVoice(state.voice));
   }
 
   if (state.strategyOptions.length > 0) {
@@ -143,32 +150,32 @@ export function renderMarkdown(state: BrandState): string {
   if (isSectionPopulated(state, 'consistency')) {
     const c = state.consistency;
     out.push('## Consistency', '');
-    out.push(c.coherent ? 'No high-severity contradictions found.' : 'Contradictions found.', '');
-    if (c.issues.length > 0) {
-      for (const issue of c.issues) {
-        out.push(`- **${issue.sections.join(' ↔ ')}** (${issue.severity}): ${issue.conflict}`);
-        out.push(`  - Resolution: ${issue.resolution}`);
-      }
-      out.push('');
+    out.push(
+      c.status === 'consistent' ? 'The sections agree.' : 'Contradictions found.',
+      '',
+    );
+    if (c.lastCheckedAt) {
+      out.push(
+        `Checked ${c.lastCheckedAt}${c.checkedAgainstVersion ? ` against schema ${c.checkedAgainstVersion}` : ''}.`,
+        '',
+      );
     }
-    out.push(...list('Strengths', c.strengths));
+    out.push(...list('Notes', c.notes ?? []));
   }
 
   if (state.finalBrand) {
     const f = state.finalBrand;
     out.push('## Final brand', '');
     out.push(`**${f.name}** — ${f.tagline}`, '');
+    out.push(`Locked ${f.lockedAt}.`, '');
     out.push(`**Positioning.** ${f.positioningStatement}`, '');
     out.push(f.narrative, '');
-    out.push(...list('Personality', f.personality));
-    out.push(...list('Principles', f.principles));
+    if (f.personality.archetype) out.push(`**Archetype.** ${f.personality.archetype}`, '');
+    out.push(...list('Traits', f.personality.traits));
+    out.push(...list('Explicitly not', f.personality.antiTraits));
+    out.push(...list('Values', f.personality.values));
     out.push('### Voice', '');
-    out.push(`**Tone.** ${f.voice.tone}`, '');
-    out.push(...list('Does', f.voice.does));
-    out.push(...list('Avoids', f.voice.donts));
-    out.push('### Messaging', '');
-    for (const m of f.messaging) out.push(`- **${m.level}** (${m.audience}): ${m.message}`);
-    out.push('');
+    out.push(...renderVoice(f.voice));
     out.push('### Visual identity', '');
     out.push(...renderVisual(f.visualIdentity));
     out.push(...list('Applications', f.applications));
@@ -178,6 +185,16 @@ export function renderMarkdown(state: BrandState): string {
   if (remaining.length === 0) out.push('_Nothing derived yet._', '');
 
   return `${out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
+}
+
+function renderVoice(v: BrandState['voice']): string[] {
+  const out: string[] = [];
+  out.push(...list('Tone', v.toneAttributes));
+  out.push(...list('Write like this', v.writingPrinciples));
+  out.push(...list('Never write', v.avoid));
+  out.push(`**Primary message.** ${v.messagingHierarchy.primaryMessage}`, '');
+  out.push(...list('Supporting messages', v.messagingHierarchy.supportingMessages));
+  return out;
 }
 
 function renderVisual(v: BrandState['visualDirection']): string[] {

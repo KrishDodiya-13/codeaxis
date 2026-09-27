@@ -448,7 +448,17 @@ export function shouldRerunStressTests(before: BrandState, after: BrandState): T
   if (changed('selectedStrategy') || changed('strategyOptions')) {
     for (const type of TEST_TYPES) affected.add(type);
   }
-  if (changed('shape')) {
+  if (changed('personality')) {
+    affected.add('cliché');
+    affected.add('audienceMismatch');
+    affected.add('contradiction');
+  }
+  if (changed('naming')) {
+    affected.add('cliché');
+    affected.add('contradiction');
+    affected.add('messaging');
+  }
+  if (changed('voice')) {
     affected.add('cliché');
     affected.add('contradiction');
     affected.add('messaging');

@@ -68,13 +68,13 @@ describe('isSectionPopulated', () => {
     }
   });
 
-  it('treats a coherent consistency check with no issues as derived', () => {
-    const state = applyDelta(createInitialState(project), 'consistency', {
-      coherent: true,
-      issues: [],
-      strengths: [],
-    });
+  it('treats a completed consistency check as derived, even with no notes', () => {
+    const state = applyDelta(createInitialState(project), 'consistency', { status: 'consistent' });
     assert.equal(isSectionPopulated(state, 'consistency'), true);
+  });
+
+  it('treats the initial not-yet-checked consistency as not derived', () => {
+    assert.equal(isSectionPopulated(createInitialState(project), 'consistency'), false);
   });
 });
 

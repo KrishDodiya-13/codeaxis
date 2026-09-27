@@ -116,9 +116,9 @@ describe('runStep', () => {
     state = (await runStep(deriver, state, 'positioning')).state;
     state = (await runStep(deriver, state, 'strategyOptions')).state;
     state = { ...state, selectedStrategy: selectStrategy(state.strategyOptions, 'TRUST') };
-    state = (await runStep(deriver, state, 'shape')).state;
+    state = (await runStep(deriver, state, 'personality')).state;
 
-    // shape is a plain section step, so it receives the serialized state.
+    // personality is a plain section step, so it receives the serialized state.
     const shapeCall = deriver.calls[3]!;
     assert.match(shapeCall.serializedState, /discovery/);
     assert.match(shapeCall.serializedState, /positioning/);
@@ -150,8 +150,10 @@ describe('missingDependencies', () => {
     const missing = missingDependencies(createInitialState(project), 'finalBrand');
     assert.deepEqual(missing, [
       'selectedStrategy',
-      'shape',
+      'personality',
+      'naming',
       'visualDirection',
+      'voice',
       'stressTests',
       'consistency',
     ]);
@@ -305,7 +307,8 @@ describe('rollbackTo', () => {
       'positioning',
       'strategyOptions',
       'selectedStrategy',
-      'shape',
+      'personality',
+      'naming',
     ]);
     assert.equal(rolled.finalBrand, undefined);
   });
@@ -325,7 +328,7 @@ describe('rollbackTo', () => {
 
     assert.deepEqual(rolled.discovery, before.discovery);
     assert.deepEqual(rolled.positioning, before.positioning);
-    assert.deepEqual(rolled.shape, before.shape);
+    assert.deepEqual(rolled.personality, before.personality);
     assert.deepEqual(rolled.project, before.project);
   });
 
@@ -339,7 +342,7 @@ describe('rollbackTo', () => {
 
     assert.deepEqual(
       deriver.calls.map((call) => call.section),
-      ['visualDirection', 'stressTests', 'consistency'],
+      ['visualDirection', 'voice', 'stressTests', 'consistency'],
     );
   });
 

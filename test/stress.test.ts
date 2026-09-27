@@ -129,7 +129,9 @@ describe('the STRESS TEST instructions', () => {
 describe('citesFieldPath', () => {
   it('accepts a real field path', () => {
     for (const evidence of [
-      'shape.personality',
+      'personality.traits',
+      'voice.toneAttributes',
+      'naming.selectedName',
       'discovery.targetAudience vs selectedStrategy.audienceFit',
       'visualDirection.mood ("calm")',
       'strategyOptions[2].positioning',
@@ -143,6 +145,7 @@ describe('citesFieldPath', () => {
     for (const evidence of [
       'the tone feels off',
       'the personality section',
+      'the voice',
       'discovery',
       'the positioning and the shape disagree',
     ]) {
@@ -380,10 +383,10 @@ describe('missingSections', () => {
 
   it('names the sections not derived yet', () => {
     const state = completeState();
-    state.shape = { personality: [], principles: [], namingTerritories: [], taglineDirections: [], messagingHierarchy: [] };
+    state.personality = { traits: [], antiTraits: [], values: [], rationale: [] };
     state.visualDirection = { colors: [], typography: '', imagery: '', shapes: '', mood: '', avoid: [] };
 
-    assert.deepEqual(missingSections(state), ['shape', 'visualDirection']);
+    assert.deepEqual(missingSections(state), ['personality', 'visualDirection']);
   });
 });
 
@@ -565,9 +568,20 @@ describe('shouldRerunStressTests', () => {
     assert.deepEqual(shouldRerunStressTests(before, after), ['contradiction']);
   });
 
-  it('recommends the language and consistency tests when shape changes', () => {
+  it('recommends the language and consistency tests when personality changes', () => {
     const after = completeState();
-    after.shape = { ...after.shape, personality: ['warm', 'friendly', 'approachable'] };
+    after.personality = { ...after.personality, traits: ['warm', 'friendly', 'approachable'] };
+
+    assert.deepEqual(shouldRerunStressTests(before, after), [
+      'cliché',
+      'audienceMismatch',
+      'contradiction',
+    ]);
+  });
+
+  it('recommends the language tests when voice changes', () => {
+    const after = completeState();
+    after.voice = { ...after.voice, toneAttributes: ['breezy'] };
 
     assert.deepEqual(shouldRerunStressTests(before, after), ['cliché', 'contradiction', 'messaging']);
   });

@@ -3,19 +3,19 @@ export type {
   BrandState,
   BrandStateSection,
   Consistency,
-  ConsistencyIssue,
   Discovery,
   FinalBrand,
-  MessagingLayer,
-  NamingTerritory,
+  MessagingHierarchy,
+  NameCandidate,
+  Naming,
   Positioning,
   Project,
   SectionValue,
   SelectedStrategy,
-  Shape,
+  Personality,
   StrategyOption,
   StressTest,
-  TaglineDirection,
+  Voice,
   VisualDirection,
 } from './types.ts';
 
@@ -32,7 +32,15 @@ export {
   FinalBrandSchema,
   PositioningSchema,
   SelectedStrategySchema,
-  ShapeSchema,
+  PersonalitySchema,
+  NamingSchema,
+  VoiceSchema,
+  MessagingHierarchySchema,
+  NameCandidateSchema,
+  FinalBrandDraftSchema,
+  BrandOsDraftSchema,
+  BrandOsSchema,
+  SCHEMA_VERSION,
   StrategyOptionSchema,
   BattleResultSchema,
   StressTestResultSchema,
@@ -64,6 +72,7 @@ export type { SectionDiff, ValidationResult } from './state.ts';
 export {
   BrandClient,
   DEFAULT_MODEL,
+  hasCredentialEnv,
   RefusalError,
   SectionParseError,
   addUsage,
@@ -72,6 +81,7 @@ export type { BrandClientOptions, DeriveOptions, Effort, SectionDeriver, Usage }
 
 export {
   MissingDependencyError,
+  MissingSelectionError,
   STEPS,
   StrategySelectionRequiredError,
   missingDependencies,
@@ -79,7 +89,6 @@ export {
 } from './steps.ts';
 
 export {
-  brandFromIdea,
   isComplete,
   rollbackTo,
   runPipeline,
@@ -191,5 +200,35 @@ export type {
 export { createDiscoverServer, listen } from './server.ts';
 export type { ServerOptions } from './server.ts';
 
-export { InvalidRunFileError, loadState, saveState } from './store.ts';
+export {
+  BrandOsInputError,
+  IncompleteBrandOsError,
+  IncompleteBrandStateError,
+  assembleBrandOs,
+  assessReadiness,
+  compileBrandOs,
+  findEmptyFields,
+  findMissingForCompile,
+  summarizeFindings,
+  validateBrandOsRequest,
+} from './brandos.ts';
+export type {
+  BrandOs,
+  BrandOsDraft,
+  BrandOsOptions,
+  BrandOsRequest,
+  BrandOsResponse,
+  ReadinessCheck,
+  RolloutMilestone,
+} from './brandos.ts';
+
+export { migrateState, needsMigration } from './migrate.ts';
+export type { MigrationResult } from './migrate.ts';
+
+export {
+  InvalidRunFileError,
+  loadState,
+  loadStateWithMigration,
+  saveState,
+} from './store.ts';
 export { renderMarkdown } from './report.ts';

@@ -9,8 +9,10 @@
 import type { SectionDeriver, Usage } from './client.ts';
 import {
   ConsistencySchema,
-  FinalBrandSchema,
-  ShapeSchema,
+  FinalBrandDraftSchema,
+  NamingSchema,
+  PersonalitySchema,
+  VoiceSchema,
   VisualDirectionSchema,
 } from './schemas.ts';
 import { battle } from './battle.ts';
@@ -37,6 +39,24 @@ export class StrategySelectionRequiredError extends Error {
     );
     this.name = 'StrategySelectionRequiredError';
     this.directions = directions;
+  }
+}
+
+/**
+ * Thrown when locking requires a choice that has not been made.
+ *
+ * `naming` owns the name and the tagline, so the lock step reads them rather than
+ * inventing them — and says which one is missing.
+ */
+export class MissingSelectionError extends Error {
+  readonly field: string;
+
+  constructor(field: string) {
+    super(
+      `Cannot lock the brand: ${field} has not been chosen. Re-run the naming step, or set it directly.`,
+    );
+    this.name = 'MissingSelectionError';
+    this.field = field;
   }
 }
 
@@ -109,21 +129,39 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
     },
   },
 
-  shape: {
-    section: 'shape',
-    label: 'Shape (personality, naming, messaging)',
+  personality: {
+    section: 'personality',
+    label: 'Personality',
     dependsOn: ['discovery', 'positioning', 'selectedStrategy'],
     async derive(deriver, state) {
-      return deriver.deriveSection('shape', serializeForPrompt(state), ShapeSchema);
+      return deriver.deriveSection('personality', serializeForPrompt(state), PersonalitySchema);
+    },
+  },
+
+  naming: {
+    section: 'naming',
+    label: 'Naming',
+    dependsOn: ['positioning', 'selectedStrategy', 'personality'],
+    async derive(deriver, state) {
+      return deriver.deriveSection('naming', serializeForPrompt(state), NamingSchema);
     },
   },
 
   visualDirection: {
     section: 'visualDirection',
     label: 'Visual direction',
-    dependsOn: ['discovery', 'positioning', 'selectedStrategy', 'shape'],
+    dependsOn: ['discovery', 'positioning', 'selectedStrategy', 'personality'],
     async derive(deriver, state) {
       return deriver.deriveSection('visualDirection', serializeForPrompt(state), VisualDirectionSchema);
+    },
+  },
+
+  voice: {
+    section: 'voice',
+    label: 'Voice',
+    dependsOn: ['positioning', 'selectedStrategy', 'personality'],
+    async derive(deriver, state) {
+      return deriver.deriveSection('voice', serializeForPrompt(state), VoiceSchema);
     },
   },
 
@@ -160,7 +198,7 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
   stressTests: {
     section: 'stressTests',
     label: 'Stress tests',
-    dependsOn: ['selectedStrategy', 'shape', 'visualDirection'],
+    dependsOn: ['selectedStrategy', 'personality', 'naming', 'visualDirection', 'voice'],
     async derive(deriver, state) {
       // Runs through the STRESS TEST flow, so the pipeline and /api/stress-test
       // share one prompt and one schema. The section stores the findings; the
@@ -179,16 +217,39 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
   consistency: {
     section: 'consistency',
     label: 'Consistency check',
-    dependsOn: ['discovery', 'positioning', 'selectedStrategy', 'shape', 'visualDirection'],
+    dependsOn: ['discovery', 'positioning', 'selectedStrategy', 'personality', 'naming', 'visualDirection', 'voice'],
     async derive(deriver, state) {
-      return deriver.deriveSection('consistency', serializeForPrompt(state), ConsistencySchema);
+      const result = await deriver.deriveSection(
+        'consistency',
+        serializeForPrompt(state),
+        ConsistencySchema,
+      );
+
+      // The timestamp and the version are the pipeline's to stamp, not the model's:
+      // they record when the check ran and what it ran against.
+      return {
+        value: {
+          ...result.value,
+          lastCheckedAt: new Date().toISOString(),
+          checkedAgainstVersion: state.schemaVersion,
+        },
+        usage: result.usage,
+      };
     },
   },
 
   finalBrand: {
     section: 'finalBrand',
     label: 'Final brand',
-    dependsOn: ['selectedStrategy', 'shape', 'visualDirection', 'stressTests', 'consistency'],
+    dependsOn: [
+      'selectedStrategy',
+      'personality',
+      'naming',
+      'visualDirection',
+      'voice',
+      'stressTests',
+      'consistency',
+    ],
     async derive(deriver, state) {
       // The stress test gates finalization. Locking a brand with an unresolved
       // critical or high finding is exactly what Phase 5 exists to prevent, so this
@@ -197,7 +258,44 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
       const blocking = blockingFindings(state.stressTests);
       if (blocking.length > 0) throw new FinalizationBlockedError(blocking);
 
-      return deriver.deriveSection('finalBrand', serializeForPrompt(state), FinalBrandSchema);
+      // The name and tagline are owned by naming, so locking requires them to have
+      // been chosen there rather than inventing them here.
+      const name = state.naming.selectedName;
+      const tagline = state.naming.tagline.selected;
+      if (name === undefined || tagline === undefined) {
+        throw new MissingSelectionError(
+          name === undefined ? 'naming.selectedName' : 'naming.tagline.selected',
+        );
+      }
+
+      const strategy = resolveSelectedStrategy(state);
+      if (strategy === undefined) {
+        throw new MissingDependencyError('finalBrand', ['selectedStrategy']);
+      }
+
+      // Only the narrative and the applications are asked for. Everything else is
+      // copied from the branch that owns it, so the lock cannot rewrite a decision
+      // that has already been stress-tested.
+      const draft = await deriver.deriveSection(
+        'finalBrand',
+        serializeForPrompt(state),
+        FinalBrandDraftSchema,
+      );
+
+      return {
+        value: {
+          name,
+          tagline,
+          positioningStatement: strategy.positioning,
+          narrative: draft.value.narrative,
+          personality: structuredClone(state.personality),
+          voice: structuredClone(state.voice),
+          visualIdentity: structuredClone(state.visualDirection),
+          applications: draft.value.applications,
+          lockedAt: new Date().toISOString(),
+        },
+        usage: draft.usage,
+      };
     },
   },
 };

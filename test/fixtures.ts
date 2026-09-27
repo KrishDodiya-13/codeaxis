@@ -7,6 +7,9 @@
  */
 import type { DeriveOptions, SectionDeriver, Usage } from '../src/client.ts';
 import type { DiscoverResult } from '../src/discover.ts';
+import type { BrandOsDraft } from '../src/brandos.ts';
+import { BRAND_OS_INSTRUCTIONS } from '../src/prompts.ts';
+import { SCHEMA_VERSION } from '../src/schemas.ts';
 import { toStrategyOption } from '../src/battle.ts';
 import { TEST_TYPES } from '../src/types.ts';
 import type { StrategyCandidate } from '../src/battle.ts';
@@ -21,7 +24,9 @@ import type {
   Positioning,
   Project,
   SelectedStrategy,
-  Shape,
+  Personality,
+  Naming,
+  Voice,
   StrategyOption,
   StressTest,
   VisualDirection,
@@ -133,24 +138,61 @@ const positioning: Positioning = {
   sourceDiscoveryHash: hashDiscovery(discovery),
 };
 
-const shape: Shape = {
-  personality: ['Exacting', 'Plain-spoken', 'Unsentimental about craft'],
-  principles: [
+const personality: Personality = {
+  traits: ['Exacting', 'Plain-spoken', 'Steady'],
+  antiTraits: ['Motivational', 'Hustle-coded', 'Deferential about craft'],
+  values: [
     'Never ask for information the delivery record already contains',
     'Show the repeatable pattern before proposing the product',
   ],
-  namingTerritories: [
-    { name: 'Repetition', rationale: 'Names the pattern the tool finds.', examples: ['Cadence', 'Throughline'] },
-    { name: 'Handover', rationale: 'Names the outcome: work leaving the owner.', examples: ['Handoff', 'Relay'] },
+  archetype: 'The Auditor — reads what is already there and says it plainly',
+  rationale: [
+    'Exacting and plain-spoken follow from the TRUST direction, which promises nothing is invented',
+    'Steady replaces a warmer trait so the voice does not fight the reassurance the strategy rests on',
   ],
-  taglineDirections: [
-    { tagline: 'The work you already repeat.', rationale: 'Points at the asset they own.', personalityFit: ['Plain-spoken'] },
-    { tagline: 'Stop being the bottleneck.', rationale: 'Names the need directly.', personalityFit: ['Exacting'] },
+};
+
+const naming: Naming = {
+  territories: [
+    'repetition (e.g. Cadence)',
+    'handover (e.g. Relay)',
   ],
-  messagingHierarchy: [
-    { level: 'hero', message: 'Turn repeated work into a product.', audience: 'Agency owners' },
-    { level: 'proof point', message: 'Built from your delivery record.', audience: 'Operations leads' },
+  candidates: [
+    {
+      name: 'Throughline',
+      territory: 'repetition (e.g. Cadence)',
+      pros: ['Names the pattern the tool finds', 'Reads as one word and spells itself'],
+      cons: ['Heard aloud it can be taken for "throughput"'],
+    },
+    {
+      name: 'Relay',
+      territory: 'handover (e.g. Relay)',
+      pros: ['Names the outcome: work leaving the owner'],
+      cons: ['Crowded — several unrelated products already use it'],
+    },
   ],
+  selectedName: 'Throughline',
+  tagline: {
+    candidates: ['The work you already repeat.', 'Stop being the bottleneck.'],
+    selected: 'The work you already repeat.',
+  },
+};
+
+const voice: Voice = {
+  toneAttributes: ['Direct', 'Technical where it earns trust', 'Calm under a deadline'],
+  writingPrinciples: [
+    'Name the work concretely',
+    'Use the numbers already in the delivery record',
+    'Short sentences',
+  ],
+  avoid: ['Scale your impact', 'Unlock your potential', 'Any sentence that would fit a hustle newsletter'],
+  messagingHierarchy: {
+    primaryMessage: 'Turn the work you already repeat into a product someone else can run.',
+    supportingMessages: [
+      'Built from your delivery record, not a blank template',
+      'Nothing here is invented — every offer traces to work you shipped',
+    ],
+  },
 };
 
 const visualDirection: VisualDirection = {
@@ -243,7 +285,7 @@ const stressTests: StressTest[] = [
     issue:
       'The personality is unsentimental and exacting, while the chosen TRUST strategy leans on reassurance, so the voice and the strategic bet pull in opposite directions.',
     evidence:
-      'shape.personality (["Exacting", "Plain-spoken", "Unsentimental about craft"]) vs selectedStrategy.direction (TRUST) and strategyOptions[2].positioning',
+      'personality.traits (["Exacting", "Plain-spoken", "Steady"]) vs selectedStrategy.direction (TRUST) and strategyOptions[2].positioning',
     impact:
       'Onboarding copy written to reassure a cautious owner will read as cold next to marketing that promises nothing is invented, and readers will not know which brand they are dealing with.',
     recommendation:
@@ -275,50 +317,106 @@ const stressTests: StressTest[] = [
 ];
 
 const consistency: Consistency = {
-  coherent: false,
-  issues: [
-    {
-      sections: ['stressTests', 'positioning'],
-      conflict: 'The differentiator rests on a capability an incumbent can copy.',
-      severity: 'high',
-      resolution: 'Restate the differentiator around the pattern found rather than the data ingested.',
-    },
+  status: 'issues-found',
+  lastCheckedAt: '2026-09-27T09:00:00.000Z',
+  checkedAgainstVersion: SCHEMA_VERSION,
+  notes: [
+    'personality.traits and selectedStrategy.direction agree: exacting reads as the TRUST bet, not as warmth',
+    'naming.selectedName carries a misreading risk already recorded in stressTests',
   ],
-  strengths: ['Visual direction and personality both read as exacting rather than warm'],
 };
 
 const finalBrand: FinalBrand = {
   name: 'Throughline',
   tagline: 'The work you already repeat.',
-  positioningStatement: 'Throughline turns the work an agency already repeats into an offer someone else can deliver.',
+  positioningStatement:
+    'Your delivery record already contains the answer, so nothing here is invented. Every offer is built from work you have shipped and can stand behind.',
   narrative:
     'Every agency already delivers the same work more than once. Throughline reads the delivery record, finds the pattern, and turns it into an offer someone other than the owner can run.',
-  personality: ['Exacting', 'Plain-spoken', 'Unsentimental about craft'],
-  principles: [
-    'Never ask for information the delivery record already contains',
-    'Show the repeatable pattern before proposing the product',
-  ],
-  voice: {
-    tone: 'Direct, technical where it earns trust, never motivational.',
-    does: ['Name the work concretely', 'Use the numbers already in the record'],
-    donts: ['Scale your impact', 'Unlock your potential'],
-  },
-  messaging: [
-    { level: 'hero', message: 'The work you already repeat, as a product.', audience: 'Agency owners' },
-    { level: 'proof point', message: 'Read from your delivery record, not a blank template.', audience: 'Operations leads' },
-  ],
+  personality,
+  voice,
   visualIdentity: visualDirection,
   applications: ['Landing page hero', 'First-run pattern report'],
+  lockedAt: '2026-09-27T10:30:00.000Z',
+};
+
+/**
+ * The material the BRAND OS compile step generates.
+ *
+ * Only what nothing earlier in the pipeline produced; everything else in the
+ * deliverable is projected from the state.
+ */
+export const brandOsDraft: BrandOsDraft = {
+  purpose:
+    'So that an agency owner is not the only person who can deliver the work their business is built on.',
+  mission:
+    'Read the delivery record an agency already has, find the work it repeats, and turn it into an offer someone else can run.',
+  vision:
+    'Service businesses that can be handed over, sold or stepped away from without the work stopping.',
+  coreSegments: [
+    'Owners of 5-to-20-person agencies who abandoned one attempt at packaging an offer',
+    'Operations leads inheriting delivery from a founder who still holds the process in their head',
+  ],
+  nameRationale:
+    'Throughline comes from the repetition territory and names the thing the tool actually finds: the line running through work an agency has already delivered. It spells itself and reads as one word. It was chosen in spite of a real drawback — heard aloud it can be taken for "throughput" — which is why it always appears with the tagline on first use.',
+  archetype: 'The Auditor — reads what is already there and says it plainly',
+  logoDirection:
+    'A single continuous line resolving into a mark, drawn at the same weight as the interface type so it sits in a table header rather than above it. It should read as a record being traced, not as a spark or an upward arrow. Avoid gradients, avoid anything suggesting acceleration.',
+  sampleCopy: {
+    headline: 'You have already delivered this work. Eleven times.',
+    boilerplate:
+      'Throughline reads an agency delivery record, finds the work that repeats, and turns it into an offer someone other than the owner can run. Every offer traces to work the agency has already shipped, so nothing in it is invented.',
+  },
+  launch: {
+    goToMarketSummary:
+      'Founder-to-founder, because that is the constraint discovery recorded: no sales team and no paid acquisition. Reach owners where they already discuss delivery problems, lead with a pattern report built from their own record, and let the artefact do the selling rather than a pitch.',
+    keyChannels: [
+      'Agency-owner communities and Slack groups, where the delivery bottleneck is already the topic',
+      'Direct founder outreach with a pattern report attached, since the artefact is the argument',
+    ],
+    rolloutSequence: [
+      {
+        milestone: 'Ten owners have seen their own delivery record read back to them',
+        timing: '6 weeks before launch',
+        detail:
+          'Run the pattern report by hand for ten agencies and record which patterns they did not know they had.',
+      },
+      {
+        milestone: 'The pattern report runs without a human',
+        timing: 'launch week',
+        detail: 'Self-serve import and report, with the naming and voice applied end to end.',
+      },
+      {
+        milestone: 'First offer built by someone other than the owner',
+        timing: 'month 2',
+        detail:
+          'Track whether an operations lead can take a generated offer and run it unaided — the actual promise.',
+      },
+    ],
+  },
+};
+
+/**
+ * What the lock step actually asks the model for.
+ *
+ * Only the two new fields. Everything else in `finalBrand` is copied from the branch
+ * that owns it, so the step must not be fed the whole snapshot.
+ */
+export const finalBrandDraft = {
+  narrative: finalBrand.narrative,
+  applications: [...finalBrand.applications],
 };
 
 /** One schema-valid value per section. */
 export const sectionFixtures = {
   discovery,
   positioning,
-  shape,
-  visualDirection,
   strategyOptions,
   selectedStrategy,
+  personality,
+  naming,
+  visualDirection,
+  voice,
   stressTests,
   consistency,
   finalBrand,
@@ -326,7 +424,14 @@ export const sectionFixtures = {
 
 /** A fully derived state, for report and validation tests. */
 export function completeState(): BrandState {
-  return structuredClone({ project, ...sectionFixtures }) as BrandState;
+  return structuredClone({
+    id: '11111111-2222-3333-4444-555555555555',
+    schemaVersion: SCHEMA_VERSION,
+    createdAt: '2026-09-27T08:00:00.000Z',
+    updatedAt: '2026-09-27T10:30:00.000Z',
+    project,
+    ...sectionFixtures,
+  }) as BrandState;
 }
 
 const stubUsage: Usage = {
@@ -356,6 +461,12 @@ export class StubDeriver implements SectionDeriver {
   ): Promise<{ value: T; usage: Usage }> {
     this.calls.push({ section, serializedState, userPrompt: options?.userPrompt });
 
+    // The BRAND OS compile step writes to finalBrand but is not the finalBrand step,
+    // and it says so by overriding the instructions.
+    if (options?.instructions === BRAND_OS_INSTRUCTIONS) {
+      return { value: schema.parse(structuredClone(brandOsDraft)) as T, usage: stubUsage };
+    }
+
     // Several sections are not requested in their BrandState shape: each endpoint
     // step asks for its own result shape and maps it afterwards.
     const raw =
@@ -370,7 +481,9 @@ export class StubDeriver implements SectionDeriver {
             ? positionResult
             : section === 'strategyOptions'
               ? { strategies: strategyCandidates }
-              : sectionFixtures[section];
+              : section === 'finalBrand'
+                ? finalBrandDraft
+                : sectionFixtures[section];
 
     // Parsing through the real schema keeps the fixtures honest: a fixture that
     // drifts out of schema fails the test rather than silently passing.

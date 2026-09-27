@@ -48,38 +48,71 @@ export type Positioning = {
   sourceDiscoveryHash?: string;
 };
 
-export type NamingTerritory = {
-  /** Short label for the territory, e.g. "Craft & Provenance". */
+/**
+ * Who the brand is.
+ *
+ * Internal-facing: used to judge whether a decision — a partnership, a feature, a
+ * strategy — fits the brand. Distinct from `Voice`, which is how it talks. A brand
+ * can be ambitious here and write in short calm sentences there; collapsing the two
+ * loses the ability to give a copywriter concrete guidance separate from internal
+ * brand-strategy language.
+ */
+export type Personality = {
+  /** Three to five specific, non-generic adjectives. */
+  traits: string[];
+  /** What the brand explicitly is not, which makes the exclusions auditable. */
+  antiTraits: string[];
+  /** The principles driving decisions. */
+  values: string[];
+  /** An optional narrative archetype, e.g. "The Mentor", "The Underdog". */
+  archetype?: string;
+  rationale: string[];
+};
+
+export type NameCandidate = {
   name: string;
-  /** The idea the territory is built on. */
-  rationale: string;
-  /** Example names that live inside this territory. */
-  examples: string[];
+  /** Which territory this came from. */
+  territory: string;
+  pros: string[];
+  cons: string[];
 };
 
-export type TaglineDirection = {
-  tagline: string;
-  /** Why this line follows from the positioning. */
-  rationale: string;
-  /** Which personality traits the line leans on. */
-  personalityFit: string[];
+/**
+ * What the brand is called.
+ *
+ * Its own branch rather than part of a catch-all because naming carries its own
+ * review cycle — trademark, domain, legal — that nothing else in the state shares.
+ */
+export type Naming = {
+  /** Approaches explored, e.g. "descriptive", "evocative", "coined". */
+  territories: string[];
+  candidates: NameCandidate[];
+  selectedName?: string;
+  tagline: {
+    candidates: string[];
+    selected?: string;
+  };
 };
 
-export type MessagingLayer = {
-  /** Where this layer is used, e.g. "hero", "subhead", "proof point". */
-  level: string;
-  message: string;
-  /** Who this layer is speaking to. */
-  audience: string;
+/** The one thing to say, and what backs it up. */
+export type MessagingHierarchy = {
+  primaryMessage: string;
+  supportingMessages: string[];
 };
 
-/** The brand's personality and voice — naming, tagline, messaging exploration. */
-export type Shape = {
-  personality: string[];
-  principles: string[];
-  namingTerritories: NamingTerritory[];
-  taglineDirections: TaglineDirection[];
-  messagingHierarchy: MessagingLayer[];
+/**
+ * How the brand talks.
+ *
+ * Outward-facing, and written to be used directly by a copywriter.
+ */
+export type Voice = {
+  /** How it sounds — distinct from the traits in `Personality`, which are who it is. */
+  toneAttributes: string[];
+  /** The do's, e.g. "short sentences", "address the reader directly". */
+  writingPrinciples: string[];
+  /** The don'ts. Ties directly to the cliché stress test. */
+  avoid: string[];
+  messagingHierarchy: MessagingHierarchy;
 };
 
 /** The look and feel: color, type, imagery, shape language, mood, and what to avoid. */
@@ -190,53 +223,62 @@ export type TypeEvaluation = {
   note?: string;
 };
 
-export type ConsistencyIssue = {
-  /** The `BrandState` sections that disagree, e.g. `["shape", "visualDirection"]`. */
-  sections: string[];
-  conflict: string;
-  severity: 'low' | 'medium' | 'high';
-  resolution: string;
-};
-
-/** Cross-check results ensuring the sections don't contradict each other. */
+/**
+ * Whether the sections agree with each other.
+ *
+ * `not-yet-checked` is the initial state and is distinct from `consistent` — an
+ * unchecked brand is not a consistent one, and conflating them would let an
+ * unexamined state pass for a verified one.
+ */
 export type Consistency = {
-  coherent: boolean;
-  issues: ConsistencyIssue[];
-  /** What holds together well, kept so later revisions don't break it. */
-  strengths: string[];
+  status: 'not-yet-checked' | 'consistent' | 'issues-found';
+  lastCheckedAt?: string;
+  /** The `schemaVersion` the check ran against. */
+  checkedAgainstVersion?: string;
+  notes?: string[];
 };
 
-/** The finished, locked brand package. */
+/**
+ * The locked, shippable output.
+ *
+ * A snapshot, not a rewrite: the name, tagline, personality, voice and visual
+ * identity are copied from the branches that own them, so locking cannot quietly
+ * change a decision. Only `narrative` and `applications` are written here, because
+ * only they are new.
+ */
 export type FinalBrand = {
   name: string;
   tagline: string;
   positioningStatement: string;
   /** The elevator pitch, one paragraph. */
   narrative: string;
-  personality: string[];
-  principles: string[];
-  voice: {
-    tone: string;
-    /** Words and constructions the brand uses. */
-    does: string[];
-    /** Words and constructions the brand avoids. */
-    donts: string[];
-  };
-  messaging: MessagingLayer[];
+  personality: Personality;
+  voice: Voice;
   visualIdentity: VisualDirection;
   /** Where and how the brand shows up, e.g. "landing page hero", "app empty state". */
   applications: string[];
+  /** When the brand was locked. */
+  lockedAt: string;
 };
 
 export type BrandState = {
+  /** Stable identifier for this brand project. */
+  id: string;
+  /** The contract version this object was built against. */
+  schemaVersion: string;
+  createdAt: string;
+  updatedAt: string;
+
   project: Project;
   discovery: Discovery;
   positioning: Positioning;
-  shape: Shape;
-  visualDirection: VisualDirection;
   /** Every candidate considered, including the ones not picked. */
   strategyOptions: StrategyOption[];
   selectedStrategy?: SelectedStrategy;
+  personality: Personality;
+  naming: Naming;
+  visualDirection: VisualDirection;
+  voice: Voice;
   stressTests: StressTest[];
   consistency: Consistency;
   finalBrand?: FinalBrand;
@@ -249,10 +291,12 @@ export type BrandState = {
 export type BrandStateSection =
   | 'discovery'
   | 'positioning'
-  | 'shape'
-  | 'visualDirection'
   | 'strategyOptions'
   | 'selectedStrategy'
+  | 'personality'
+  | 'naming'
+  | 'visualDirection'
+  | 'voice'
   | 'stressTests'
   | 'consistency'
   | 'finalBrand';

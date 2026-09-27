@@ -1,0 +1,214 @@
+/**
+ * Migrating stored states onto the current contract.
+ *
+ * Phase 6 retired `shape` and restructured `consistency`, which makes every state
+ * written before it unreadable. The contract says that needs a migration pass rather
+ * than a silent patch in one place, so it lives here, runs on load, and reports what
+ * it had to guess.
+ *
+ * The rule throughout: never invent brand content. Where the old shape held no
+ * equivalent for a new field, the field is left empty and the step that owns it can
+ * fill it in — a migration that fabricates a tone of voice is worse than one that
+ * leaves a gap.
+ */
+import { randomUUID } from 'node:crypto';
+import { SCHEMA_VERSION } from './schemas.ts';
+import type { BrandState, Consistency, Naming, Personality, Voice } from './types.ts';
+
+export type MigrationResult = {
+  state: BrandState;
+  /** The contract version the input was built against, as far as it could be told. */
+  from: string;
+  /** What changed, and what could not be carried across. */
+  notes: string[];
+};
+
+/** Whether a value looks like a state from before this contract. */
+export function needsMigration(value: unknown): boolean {
+  if (value === null || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+
+  return (
+    'shape' in record ||
+    record.schemaVersion === undefined ||
+    (typeof record.consistency === 'object' &&
+      record.consistency !== null &&
+      'coherent' in (record.consistency as Record<string, unknown>))
+  );
+}
+
+/**
+ * Brings a stored state onto the current contract.
+ *
+ * Tolerant by design: it is reading data written by older code, so every branch is
+ * treated as possibly absent or malformed rather than trusted. Anything it cannot
+ * interpret becomes an empty branch and a note, never a guess.
+ */
+export function migrateState(value: unknown): MigrationResult {
+  if (value === null || typeof value !== 'object') {
+    throw new TypeError('Cannot migrate a value that is not an object.');
+  }
+
+  const input = value as Record<string, any>;
+  const notes: string[] = [];
+  const from = typeof input.schemaVersion === 'string' ? input.schemaVersion : 'pre-1.0.0';
+  const now = new Date().toISOString();
+
+  const shape = (input.shape ?? {}) as Record<string, any>;
+  const hasShape = input.shape !== undefined && input.shape !== null;
+
+  const personality: Personality = input.personality ?? {
+    traits: stringList(shape.personality),
+    // Nothing in the old shape recorded what the brand was not.
+    antiTraits: [],
+    values: stringList(shape.principles),
+    rationale: [],
+  };
+
+  const naming: Naming = input.naming ?? {
+    territories: (Array.isArray(shape.namingTerritories) ? shape.namingTerritories : [])
+      .map((territory: any) =>
+        typeof territory?.name === 'string'
+          ? territory.rationale
+            ? `${territory.name} (${territory.rationale})`
+            : territory.name
+          : undefined,
+      )
+      .filter((entry: unknown): entry is string => typeof entry === 'string'),
+    candidates: (Array.isArray(shape.namingTerritories) ? shape.namingTerritories : []).flatMap(
+      (territory: any) =>
+        (Array.isArray(territory?.examples) ? territory.examples : [])
+          .filter((name: unknown) => typeof name === 'string')
+          .map((name: string) => ({
+            name,
+            territory: typeof territory?.name === 'string' ? territory.name : 'unknown',
+            // The old shape recorded no per-name assessment, and inventing one here
+            // would put words in a strategist's mouth.
+            pros: [],
+            cons: [],
+          })),
+    ),
+    tagline: {
+      candidates: (Array.isArray(shape.taglineDirections) ? shape.taglineDirections : [])
+        .map((direction: any) => direction?.tagline)
+        .filter((entry: unknown): entry is string => typeof entry === 'string'),
+    },
+  };
+
+  const voice: Voice = input.voice ?? {
+    // The old shape had no tone attributes, writing principles or avoid list at all.
+    toneAttributes: [],
+    writingPrinciples: [],
+    avoid: [],
+    messagingHierarchy: messagingFrom(shape.messagingHierarchy),
+  };
+
+  if (hasShape) {
+    notes.push('shape.personality and shape.principles moved to personality.traits and personality.values');
+    notes.push('shape.namingTerritories moved to naming.territories and naming.candidates');
+    notes.push('shape.taglineDirections moved to naming.tagline.candidates');
+    notes.push('shape.messagingHierarchy moved to voice.messagingHierarchy');
+    notes.push(
+      'personality.antiTraits, personality.rationale, voice.toneAttributes, voice.writingPrinciples ' +
+        'and voice.avoid had no equivalent in shape and are empty — re-run those steps to fill them',
+    );
+    if (naming.candidates.length > 0) {
+      notes.push('naming.candidates carry no pros or cons, which the old shape did not record');
+    }
+  }
+
+  const consistency = migrateConsistency(input.consistency, notes);
+
+  const state = {
+    id: typeof input.id === 'string' ? input.id : randomUUID(),
+    schemaVersion: SCHEMA_VERSION,
+    createdAt: typeof input.createdAt === 'string' ? input.createdAt : now,
+    updatedAt: now,
+
+    project: input.project ?? { idea: '' },
+    discovery: input.discovery,
+    positioning: input.positioning,
+    strategyOptions: Array.isArray(input.strategyOptions) ? input.strategyOptions : [],
+    ...(input.selectedStrategy === undefined ? {} : { selectedStrategy: input.selectedStrategy }),
+    personality,
+    naming,
+    visualDirection: input.visualDirection,
+    voice,
+    stressTests: Array.isArray(input.stressTests) ? input.stressTests : [],
+    consistency,
+    ...(input.finalBrand === undefined ? {} : { finalBrand: input.finalBrand }),
+  } as BrandState;
+
+  if (typeof input.id !== 'string') notes.push('an id was generated, since the stored state had none');
+  if (from === 'pre-1.0.0') notes.push(`schemaVersion set to ${SCHEMA_VERSION}`);
+
+  return { state, from, notes };
+}
+
+/**
+ * The old consistency object recorded `coherent` plus issues and strengths; the new
+ * one records a status and flat notes. The issues and strengths are folded into the
+ * notes so the findings survive the move rather than being dropped.
+ */
+function migrateConsistency(value: unknown, notes: string[]): Consistency {
+  if (value === null || value === undefined || typeof value !== 'object') {
+    return { status: 'not-yet-checked' };
+  }
+
+  const old = value as Record<string, any>;
+
+  // Already on the new shape.
+  if (typeof old.status === 'string') return old as Consistency;
+  if (!('coherent' in old)) return { status: 'not-yet-checked' };
+
+  const issues = Array.isArray(old.issues) ? old.issues : [];
+  const strengths = Array.isArray(old.strengths) ? old.strengths : [];
+
+  // An old state that was never checked left coherent false with nothing recorded,
+  // which is not the same as having been checked and found inconsistent.
+  if (issues.length === 0 && strengths.length === 0 && old.coherent !== true) {
+    notes.push('consistency had no recorded result, so it reads as not-yet-checked');
+    return { status: 'not-yet-checked' };
+  }
+
+  const carried = [
+    ...issues.map((issue: any) =>
+      [
+        Array.isArray(issue?.sections) ? issue.sections.join(' / ') : 'unknown',
+        issue?.severity ? `(${issue.severity})` : '',
+        issue?.conflict ?? '',
+        issue?.resolution ? `→ ${issue.resolution}` : '',
+      ]
+        .filter((part) => part !== '')
+        .join(' '),
+    ),
+    ...strengths.map((strength: string) => `holds together: ${strength}`),
+  ];
+
+  notes.push('consistency.coherent became a status, with its issues and strengths folded into notes');
+
+  return {
+    status: issues.length > 0 ? 'issues-found' : 'consistent',
+    ...(carried.length > 0 ? { notes: carried } : {}),
+  };
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+}
+
+/** Folds the old ordered messaging layers into a primary message plus supporting ones. */
+function messagingFrom(layers: unknown): Voice['messagingHierarchy'] {
+  if (!Array.isArray(layers) || layers.length === 0) {
+    return { primaryMessage: '', supportingMessages: [] };
+  }
+
+  const messages = layers
+    .map((layer: any) => (typeof layer?.message === 'string' ? layer.message : undefined))
+    .filter((entry): entry is string => entry !== undefined);
+
+  return {
+    primaryMessage: messages[0] ?? '',
+    supportingMessages: messages.slice(1),
+  };
+}

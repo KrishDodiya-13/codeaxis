@@ -6,7 +6,8 @@
  * sections are never regenerated as a side effect of a later step, so the state
  * can be inspected, diffed, or rolled back at any point in the pipeline.
  */
-import { sectionSchemas } from './schemas.ts';
+import { randomUUID } from 'node:crypto';
+import { SCHEMA_VERSION, sectionSchemas } from './schemas.ts';
 import type {
   BrandState,
   BrandStateSection,
@@ -31,8 +32,10 @@ export const SECTION_ORDER: readonly BrandStateSection[] = [
   'positioning',
   'strategyOptions',
   'selectedStrategy',
-  'shape',
+  'personality',
+  'naming',
   'visualDirection',
+  'voice',
   'stressTests',
   'consistency',
   'finalBrand',
@@ -46,7 +49,14 @@ export const SECTION_ORDER: readonly BrandStateSection[] = [
  * derived yet" from "derived and empty".
  */
 export function createInitialState(project: Project): BrandState {
+  const now = new Date().toISOString();
+
   return {
+    id: randomUUID(),
+    schemaVersion: SCHEMA_VERSION,
+    createdAt: now,
+    updatedAt: now,
+
     project: { ...project },
     discovery: {
       problem: '',
@@ -64,13 +74,9 @@ export function createInitialState(project: Project): BrandState {
       competitiveAngle: '',
       rationale: [],
     },
-    shape: {
-      personality: [],
-      principles: [],
-      namingTerritories: [],
-      taglineDirections: [],
-      messagingHierarchy: [],
-    },
+    strategyOptions: [],
+    personality: { traits: [], antiTraits: [], values: [], rationale: [] },
+    naming: { territories: [], candidates: [], tagline: { candidates: [] } },
     visualDirection: {
       colors: [],
       typography: '',
@@ -79,9 +85,16 @@ export function createInitialState(project: Project): BrandState {
       mood: '',
       avoid: [],
     },
-    strategyOptions: [],
+    voice: {
+      toneAttributes: [],
+      writingPrinciples: [],
+      avoid: [],
+      messagingHierarchy: { primaryMessage: '', supportingMessages: [] },
+    },
     stressTests: [],
-    consistency: { coherent: false, issues: [], strengths: [] },
+    // Distinct from `consistent`: an unchecked brand has not been verified, and
+    // conflating the two would let an unexamined state pass for a checked one.
+    consistency: { status: 'not-yet-checked' },
   };
 }
 
@@ -99,7 +112,11 @@ export function applyDelta<S extends BrandStateSection>(
   section: S,
   value: SectionValue<S>,
 ): BrandState {
-  return { ...cloneState(state), [section]: structuredClone(value) };
+  return {
+    ...cloneState(state),
+    [section]: structuredClone(value),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 /** Whether a section has been derived yet, as opposed to sitting at its empty default. */
@@ -113,13 +130,17 @@ export function isSectionPopulated(state: BrandState, section: BrandStateSection
       return state.discovery.problem !== '';
     case 'positioning':
       return state.positioning.category !== '';
-    case 'shape':
-      return state.shape.personality.length > 0;
+    case 'personality':
+      return state.personality.traits.length > 0;
+    case 'naming':
+      return state.naming.candidates.length > 0;
     case 'visualDirection':
       return state.visualDirection.mood !== '';
+    case 'voice':
+      return state.voice.toneAttributes.length > 0;
     case 'consistency':
-      return state.consistency.coherent || state.consistency.issues.length > 0
-        || state.consistency.strengths.length > 0;
+      // The initial value is its own status, so this needs no heuristic.
+      return state.consistency.status !== 'not-yet-checked';
     default:
       return true;
   }
@@ -181,6 +202,20 @@ export function validateState(state: BrandState): ValidationResult {
           .join('; '),
       });
     }
+  }
+
+  // A pointer to a direction that is no longer in strategyOptions is schema-valid on
+  // both sections and still wrong: every downstream step reads the resolved strategy,
+  // and resolution silently yields nothing. Cross-section checks like this are why
+  // validation cannot be per-section alone.
+  if (hasDanglingSelection(state)) {
+    errors.push({
+      section: 'selectedStrategy',
+      message:
+        `direction "${state.selectedStrategy?.direction}" is not among strategyOptions ` +
+        `(${state.strategyOptions.map((option) => option.direction).join(', ') || 'none'}), ` +
+        'so it cannot be resolved',
+    });
   }
 
   return errors.length === 0 ? { valid: true } : { valid: false, errors };
@@ -245,6 +280,8 @@ function sortKeys(value: unknown): unknown {
  * section it was not asked for, so only populated sections are sent.
  */
 export function serializeForPrompt(state: BrandState): string {
+  // Metadata is deliberately left out: an id and three timestamps are not brand
+  // content, and sending them invites a step to reason about them.
   const view: Record<string, unknown> = { project: state.project };
   for (const section of populatedSections(state)) {
     view[section] = state[section];

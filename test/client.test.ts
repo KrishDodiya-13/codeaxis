@@ -16,6 +16,7 @@ import { METHODOLOGY } from '../src/prompts.ts';
 import {
   BattleResultSchema,
   DiscoverResultSchema,
+  FinalBrandDraftSchema,
   DiscoverySchema,
   PositionResultSchema,
   StressTestResultSchema,
@@ -143,10 +144,12 @@ describe('the request BrandClient builds', () => {
       positioning: PositionResultSchema,
       strategyOptions: BattleResultSchema,
       stressTests: StressTestResultSchema,
-      shape: sectionSchemas.shape,
+      personality: sectionSchemas.personality,
+      naming: sectionSchemas.naming,
       visualDirection: sectionSchemas.visualDirection,
+      voice: sectionSchemas.voice,
       consistency: sectionSchemas.consistency,
-      finalBrand: sectionSchemas.finalBrand,
+      finalBrand: FinalBrandDraftSchema,
     };
 
     // selectedStrategy is the one section with no model-facing schema: choosing a

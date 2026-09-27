@@ -11,7 +11,9 @@ Built from [docs/brandstate-spec.md](docs/brandstate-spec.md) (Phase 1), the Pha
 DISCOVER spec ([docs/discover-endpoint.md](docs/discover-endpoint.md)) and the Phase 3
 POSITION spec ([docs/position-endpoint.md](docs/position-endpoint.md)) and the Phase 4
 BRAND BATTLE spec ([docs/battle-endpoint.md](docs/battle-endpoint.md)) and the Phase 5
-STRESS TEST spec ([docs/stress-test-endpoint.md](docs/stress-test-endpoint.md)).
+STRESS TEST spec ([docs/stress-test-endpoint.md](docs/stress-test-endpoint.md)), the Phase 6
+BrandState contract ([docs/brand-dna-contract.md](docs/brand-dna-contract.md)) and the
+Phase 7 Brand OS spec ([docs/brand-os-endpoint.md](docs/brand-os-endpoint.md)).
 
 ## Install
 
@@ -245,18 +247,73 @@ dealing with blocking findings. That is the point.
 
 Full details in [docs/stress-test-endpoint.md](docs/stress-test-endpoint.md).
 
+## The BRAND OS endpoint
+
+Phase 7 is the last one. It compiles the finished state into the six-section deliverable
+handed back to the user.
+
+```bash
+curl -s localhost:3000/api/brand-os -H 'content-type: application/json'   -d '{"brandState":{...}}'
+```
+
+Six sections: `strategy`, `identity`, `visual`, `voice`, `launch`, `validation`.
+
+It **re-runs nothing.** Most of the deliverable is a projection of decisions already made
+and already stress-tested, so those fields are assembled in code and the model never sees
+them as its own to write — the archetype in the state wins over anything generated, and
+the locked positioning statement wins over the strategy's. The model is asked only for
+what nothing earlier produced: purpose/mission/vision, a name rationale, a logo
+direction, sample copy in the brand voice, and the entire launch plan.
+
+`validation` is arithmetic, not opinion. A readiness score a model writes about its own
+work is worth nothing, so it is a six-item checklist over the state — and a blocking
+stress-test finding forces `not-ready` regardless of how the rest scores, because the
+point of a gate is that unrelated checks passing cannot outvote it.
+
+```bash
+brandstate brand-os                       # print it, with the readiness checklist
+brandstate brand-os --out brand-os.json   # write it to a file
+brandstate brand-os --draft               # compile despite open blocking findings
+```
+
+No required field comes back empty: the compiler walks the result and fails rather than
+returning a stub. The deliverable is returned, not persisted — it is a projection of the
+state, and a stored copy would go stale the moment a branch changed. Reasoning, and the
+answers to the spec's two open questions, in
+[docs/brand-os-endpoint.md](docs/brand-os-endpoint.md).
+
 ## Use it as a library
 
+The pipeline stops at two points that are human decisions by design — choosing a
+strategy direction, and dealing with blocking stress-test findings — so a run is driven
+in segments rather than one call:
+
 ```ts
-import { brandFromIdea, renderMarkdown } from './dist/index.js';
+import {
+  BrandClient, createInitialState, runPipeline, selectStrategy,
+  acknowledgeFinding, blockingFindings, renderMarkdown,
+} from './dist/index.js';
 
-const { state, usage } = await brandFromIdea(
-  { idea: 'A tool that turns a service business into a sellable product', productType: 'B2B SaaS' },
-  { effort: 'high', onStepFinish: (step) => console.log(`${step.label} done`) },
-);
+const client = new BrandClient({ effort: 'high' });
+let state = createInitialState({ idea: 'A tool that turns a service business into a sellable product' });
 
+// 1. Up to the first checkpoint.
+state = (await runPipeline(client, state, { until: 'strategyOptions' })).state;
+
+// 2. A person picks a direction.
+state = { ...state, selectedStrategy: selectStrategy(state.strategyOptions, 'TRUST') };
+
+// 3. On to the stress test.
+state = (await runPipeline(client, state, { until: 'consistency' })).state;
+
+// 4. A person resolves or accepts each blocking finding.
+for (const finding of blockingFindings(state.stressTests)) {
+  state = { ...state, stressTests: acknowledgeFinding(state.stressTests, { type: finding.type }) };
+}
+
+// 5. Lock it.
+state = (await runPipeline(client, state)).state;
 console.log(renderMarkdown(state));
-console.log(`${usage.cacheReadTokens} tokens read from cache`);
 ```
 
 Finer-grained control, when you want to drive the steps yourself:
@@ -405,7 +462,7 @@ departing from it; the field names and section structure are unchanged.
 ## Tests
 
 ```bash
-npm test        # 392 tests, no API key and no network
+npm test        # 482 tests, no API key and no network
 npm run typecheck   # covers src and test
 ```
 

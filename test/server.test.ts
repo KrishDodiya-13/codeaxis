@@ -19,6 +19,8 @@ import {
   positionResult,
 } from './fixtures.ts';
 import { toPositionResponse } from '../src/position.ts';
+import { acknowledgeFinding } from '../src/stress.ts';
+import { findEmptyFields } from '../src/brandos.ts';
 
 let server: Server;
 let baseUrl: string;
@@ -60,6 +62,14 @@ const post = (body: unknown, raw?: string) => postTo('/api/discover', body, raw)
 const postPosition = (body: unknown, raw?: string) => postTo('/api/position', body, raw);
 const postBattle = (body: unknown, raw?: string) => postTo('/api/battle', body, raw);
 const postStress = (body: unknown, raw?: string) => postTo('/api/stress-test', body, raw);
+const postBrandOs = (body: unknown, raw?: string) => postTo('/api/brand-os', body, raw);
+
+/** A finished state with nothing blocking, so the Brand OS compiles. */
+function compilableState() {
+  const state = completeState();
+  state.stressTests = acknowledgeFinding(state.stressTests, { type: 'contradiction' });
+  return state;
+}
 
 /** A settled discovery, so the POSITION guard lets it through. */
 function settledDiscovery() {
@@ -520,6 +530,96 @@ describe('POST /api/stress-test', () => {
   });
 });
 
+describe('POST /api/brand-os', () => {
+  it('returns brandId and a six-section brandOS', async () => {
+    deriver = new StubDeriver();
+    const state = compilableState();
+    const { status, json } = await postBrandOs({ brandId: state.id, brandState: state });
+
+    assert.equal(status, 200);
+    assert.deepEqual(Object.keys(json).sort(), ['brandId', 'brandOS']);
+    assert.deepEqual(Object.keys(json.brandOS), [
+      'strategy',
+      'identity',
+      'visual',
+      'voice',
+      'launch',
+      'validation',
+    ]);
+  });
+
+  it('populates every required field, with no empty stubs', async () => {
+    deriver = new StubDeriver();
+    const state = compilableState();
+    const { json } = await postBrandOs({ brandState: state });
+
+    assert.deepEqual(findEmptyFields(json.brandOS), []);
+  });
+
+  it('derives brandId from the state when omitted', async () => {
+    deriver = new StubDeriver();
+    const state = compilableState();
+    const { json } = await postBrandOs({ brandState: state });
+
+    assert.equal(json.brandId, state.id);
+  });
+
+  it('rejects a brandId that disagrees with the state', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postBrandOs({ brandId: 'nope', brandState: compilableState() });
+
+    assert.equal(status, 400);
+    assert.match(json.error, /does not match brandState.id/);
+  });
+
+  it('returns 422 with the blocking findings when the gate is closed', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postBrandOs({ brandState: completeState() });
+
+    assert.equal(status, 422);
+    assert.match(json.error, /cannot be finalized/);
+    assert.equal(json.blocking.length, 1);
+  });
+
+  it('compiles a draft when allowUnvalidated is set, marked not-ready', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postBrandOs({
+      brandState: completeState(),
+      allowUnvalidated: true,
+    });
+
+    assert.equal(status, 200);
+    assert.equal(json.brandOS.validation.readiness.label, 'not-ready');
+  });
+
+  it('returns 422 naming what the state is missing', async () => {
+    deriver = new StubDeriver();
+    const state = compilableState();
+    state.naming = { ...state.naming, selectedName: undefined };
+
+    const { status, json } = await postBrandOs({ brandState: state });
+    assert.equal(status, 422);
+    assert.deepEqual(json.missing, ['naming.selectedName has not been chosen']);
+  });
+
+  it('rejects an invalid brandState with a 400', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postBrandOs({ brandState: { project: {} } });
+
+    assert.equal(status, 400);
+    assert.match(json.error, /"brandState" is required/);
+  });
+
+  it('logs the readiness verdict', async () => {
+    deriver = new StubDeriver();
+    logs.length = 0;
+    await postBrandOs({ brandState: compilableState() });
+
+    assert.match(logs[0]!, /POST \/api\/brand-os 200/);
+    assert.match(logs[0]!, /readiness=ready-with-caveats/);
+  });
+});
+
 describe('routing', () => {
   it('rejects a GET on the endpoint with a 405 and an Allow header', async () => {
     const response = await fetch(`${baseUrl}/api/discover`);
@@ -536,6 +636,7 @@ describe('routing', () => {
     assert.match(json.error, /POST \/api\/position/);
     assert.match(json.error, /POST \/api\/battle/);
     assert.match(json.error, /POST \/api\/stress-test/);
+    assert.match(json.error, /POST \/api\/brand-os/);
   });
 
   it('rejects a GET on the position endpoint with a 405', async () => {

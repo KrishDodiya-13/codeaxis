@@ -82,8 +82,10 @@ describe('renderMarkdown', () => {
     for (const heading of [
       'Discovery',
       'Positioning',
-      'Shape',
+      'Personality',
+      'Naming',
       'Visual direction',
+      'Voice',
       'Strategy options',
       'Stress tests',
       'Consistency',

@@ -27,11 +27,17 @@ The BrandState has these sections, derived in this order:
 3. positioning — where the brand sits in the market, and why.
 4. strategyOptions — several genuinely different strategic directions for the same problem, laid out for comparison.
 5. selectedStrategy — which direction was chosen. A human decision, never yours.
-6. shape — personality and voice for the chosen direction: naming territories, tagline directions, messaging hierarchy.
-7. visualDirection — color, type, imagery, shape language, mood, and what to avoid.
-8. stressTests — checks run against the chosen direction as developed.
-9. consistency — a cross-check that the sections do not contradict each other.
-10. finalBrand — the finished, locked package.
+6. personality — who the brand is: traits, anti-traits, values.
+7. naming — what it is called: territories, candidates, the chosen name and tagline.
+8. visualDirection — color, type, imagery, shape language, mood, and what to avoid.
+9. voice — how it talks: tone, writing rules, what never to write, messaging hierarchy.
+10. stressTests — checks run against the chosen direction as developed.
+11. consistency — a cross-check that the sections do not contradict each other.
+12. finalBrand — the locked snapshot.
+
+Sections 6, 7 and 9 are the brand's DNA — who it is, what it is called, how it sounds. They are what make a brand recognisably itself rather than a strategy document.
+
+Personality and voice are next to each other and easy to blur, so keep them apart. Personality is who the brand is, used internally to judge whether a decision fits. Voice is how it talks, used directly by a copywriter. A brand can be ambitious in its personality and still write in short, calm sentences — they are related but not the same axis.
 
 On every call you receive the entire BrandState derived so far. You are asked for exactly one section. Three rules follow from that, and they are not negotiable:
 
@@ -251,17 +257,33 @@ Place the brand in the market. Discovery is settled — work from it rather than
 - competitiveAngle: how the brand attacks the position incumbents hold. Name what the incumbents are good at, and where that strength is also a weakness.
 - rationale: the reasoning chain from discovery to this positioning. Each entry should trace to something in discovery — the audience, the need, a constraint, an assumption.`,
 
-  shape: `# This step: shape
+  personality: `# This step: personality
 
-Give the brand a personality and a voice, then explore names, lines and messaging within it. Everything here must be legible as coming from the positioning already chosen.
+Decide who the brand is. Internal-facing: this is what someone uses to judge whether a partnership, a feature or a headline fits the brand. It is not how the brand writes — that comes later, in voice.
 
-A strategic direction has been selected — it is in selectedStrategy, with the full strategy resolved alongside it. That choice is settled and it is yours to develop, not to revisit. The personality you write is this direction's personality: a CONNECTION strategy and a COMPETITION strategy for the same product do not share a voice. The directions that were not chosen are not in the state, and you do not need them.
+A strategic direction has been chosen and is in the state with its full strategy resolved. That choice is settled and yours to express, not revisit. The personality is this direction's personality: a CONNECTION strategy and a COMPETITION strategy for the same product do not share a character.
 
-- personality: traits as adjectives, holding a tension rather than stacking compliments.
-- principles: rules the brand holds to. Each one must be able to rule something out — if it cannot reject a design, a word or a decision, rewrite it.
-- namingTerritories: genuinely distinct directions, not variations on one idea. Each needs a rationale tying it to the positioning, and example names that could plausibly be the brand. Territories that would appeal to different kinds of customer are more useful than territories that differ only in sound.
-- taglineDirections: lines that could carry the positioning, each tied to the personality traits it leans on. A tagline that would work for a competitor is a tagline that has not landed.
-- messagingHierarchy: ordered broadest to most specific — what someone reads first, then next, then as proof. Each layer names who it is speaking to.`,
+- traits: three to five adjectives, holding a tension rather than stacking compliments. "Innovative", "modern", "friendly" and "user-friendly" are filler — if a trait would fit any product in the category, it is not a trait. Read the stress-test findings if any are present: a trait already flagged as a cliché must not come back.
+- antiTraits: what this brand explicitly is not. Each one should be something a reasonable person might otherwise have assumed, so the exclusion rules something out. "Not evil" is not an anti-trait; "not gatekeeping" is, if the category usually is.
+- values: the principles that drive decisions. Each must be able to reject something — a value that cannot rule out a feature or a headline is decoration.
+- archetype: optional, and only if it genuinely sharpens things. Add the clause that says how it is read here: "The Coach — pushes you to be better, does not just cheerlead". A bare archetype name adds nothing.
+- rationale: why these follow from the chosen strategy and the positioning, citing both. If you are resolving a stress-test finding, say which one and how.
+
+Out of scope: no names, no taglines, no tone-of-voice rules, no colors.`,
+
+  naming: `# This step: naming
+
+Explore what the brand could be called, then commit. This branch carries its own review cycle afterwards — trademark, domain, legal — so it is a deliverable in its own right, not a flourish on the strategy.
+
+- territories: at least two genuinely different naming approaches, not variations on one. Name the approach and give a short parenthetical example: "outcome-focused (e.g. Shipmate)", "competitive metaphor (e.g. Scrimmage)". Territories that would appeal to different customers are more useful than territories that differ only in sound.
+- candidates: real candidate names, each tied to one of your territories by name. Every candidate needs pros *and* cons: a name with no drawback has not been examined, and the cons are what a trademark review will start from. Say plainly where a name is hard to spell, easy to mishear, or already crowded.
+- selectedName: commit to one of your candidates. Not a new name invented at the last moment.
+- tagline.candidates: at least two lines that carry the positioning. A tagline that would work for a competitor has not landed.
+- tagline.selected: commit to one of those candidates.
+
+The personality is already decided — the name and the line have to sound like that brand. Read the stress-test findings if present: a name flagged for misreading must not be the one you select.
+
+Out of scope: no colors, no typography, no tone-of-voice rules.`,
 
   visualDirection: `# This step: visual direction
 
@@ -273,6 +295,20 @@ Translate the positioning and personality into a visual system. This is a brief 
 - shapes: geometry, corner treatment, density, grid behaviour.
 - mood: the feeling the system produces when someone lands on it for the first time.
 - avoid: the visual choices that would misrepresent this brand specifically. Generic warnings are wasted space — name the tempting mistake for this brand, the thing a designer would reach for by default and get wrong.`,
+
+  voice: `# This step: voice
+
+Decide how the brand talks. Outward-facing, and written to be handed straight to a copywriter — everything here has to be usable by someone who was not in the strategy conversation.
+
+Voice is not personality restated. Personality is who the brand is; voice is how it sounds. A brand whose personality is "ambitious" might write calmly and plainly. If your toneAttributes are the personality traits again in different words, you have not done this step.
+
+- toneAttributes: how it sounds. Qualified attributes do more work than bare adjectives: "confident, not arrogant" tells a writer where the edge is; "confident" does not.
+- writingPrinciples: the rules to follow, concrete enough to act on. "Short sentences". "Speak to the deadline, not abstractly". "Name the outcome, not the feature". Not "be engaging".
+- avoid: what never to write. Name the specific words and constructions — including the clichés this brand would otherwise reach for, and any phrasing a stress-test finding flagged. If the brand talks to beginners, condescension belongs here.
+- messagingHierarchy.primaryMessage: the one thing to say, in a sentence. This is what someone reads first and remembers.
+- messagingHierarchy.supportingMessages: what backs it up, ordered most to least important. Each should be able to stand alone as proof.
+
+Out of scope: no names or taglines — those are already decided in naming. No colors or typography.`,
 
   strategyOptions: BATTLE_INSTRUCTIONS,
 
@@ -286,34 +322,32 @@ Translate the positioning and personality into a visual system. This is a brief 
 
   consistency: `# This step: consistency
 
-Cross-check the sections against each other. You are looking for contradictions between decisions, not for weak decisions — a section can be coherent with the rest and still be unambitious, and that is not your call here.
+Cross-check the sections against each other. You are looking for contradictions between decisions, not weak decisions — a section can agree with everything around it and still be unambitious, and that is not your call here.
 
 Check at least:
 
 - positioning against discovery: does the position serve the audience and need that were identified?
-- shape against positioning: does the personality express this position, or a more comfortable one?
-- visualDirection against shape: would this visual system read as this personality to someone who never sees the words?
-- shape and visualDirection against the chosen strategy: do they express the direction that was actually selected, or have they drifted toward a safer or more familiar one? A CONNECTION strategy developed with a competitive, status-driven voice is this check's main catch.
-- the chosen strategy against its own recorded risks: has the development so far walked into a risk the strategy itself named?
-- stressTests against the chosen strategy: are there unresolved high-severity findings that have not been answered?
+- personality against the chosen strategy: does the character express the direction that was actually selected, or has it drifted toward a safer or more familiar one? A CONNECTION strategy with a competitive, status-driven personality is this check's main catch.
+- naming against personality: does the selected name and tagline sound like that character, or were they chosen for sound alone?
+- voice against personality: is the voice a genuine translation of the character into writing rules, or the same adjectives again?
+- visualDirection against personality and voice: would this visual system read as this brand to someone who never sees the words?
+- the chosen strategy against its own recorded risks: has the work so far walked into a risk the strategy itself named?
+- stressTests: are there findings still open at high or critical severity that nothing has answered?
 
-For each contradiction found: which sections disagree, the conflict stated concretely, a severity, and how to reconcile them. Set coherent to true only if no high-severity issue was found. Also record strengths — what holds together well — so a later revision does not break something that was working.`,
+Set status to issues-found if you find any contradiction, and consistent only if you genuinely find none. Do not return not-yet-checked — that is the value before a check has run.
+
+Put every observation in notes, one per entry, each naming the BrandState fields involved. Record what holds together as well as what does not: a later revision needs to know what it must not break.`,
 
   finalBrand: `# This step: final brand
 
-Lock the package. Everything here must already be present in the state or follow directly from it; this step consolidates and completes, it does not introduce new strategy.
+Lock the package. Everything that was decided is copied across from the branch that owns it — the name and tagline from naming, the character from personality, the writing rules from voice, the visual system from visualDirection. You are not asked for any of those and you cannot change them: a lock step that rewrites a decision defeats the point of having stress-tested it.
 
-Choose the name and the tagline. The naming territories and tagline directions in shape are the candidates, and the choice is yours to make here — commit to one of each, from what is already explored, rather than inventing a new one at the last moment. If none of the names truly fits, take the strongest territory and name from inside it.
+You write two things, because only these are new:
 
-Every stress-test finding at critical or high severity has already been resolved or explicitly accepted before this step runs — the pipeline will not reach here otherwise. Read them anyway: an accepted finding is a known trade-off you should not make worse, and a resolved one tells you what the fix was meant to be.
+- narrative: the elevator pitch in one paragraph. The brand explaining itself to a stranger who has thirty seconds. Use the primary message and the positioning, in the brand's own voice — the writing principles and the avoid list apply to this paragraph as much as to any other copy.
+- applications: where and how the brand shows up. Specific surfaces with what appears on them: "landing page hero: primary message plus the tagline", "first-run empty state: supporting message two". Not a list of channels.
 
-Carry the positioning statement through from the chosen strategy. Where a stress test or consistency issue recommended a change and that change is within this step's reach — wording, emphasis, a visual caution, avoiding a name that misreads — apply it and let the resolution show in the package. Where it is not, leave it be rather than quietly redesigning.
-
-- narrative: the elevator pitch in one paragraph. This is the brand explaining itself to a stranger who has thirty seconds.
-- voice: the tone, plus concrete does and donts at the level of words and constructions a writer can actually follow.
-- messaging: the messaging hierarchy, refined to final copy rather than direction.
-- visualIdentity: the visual direction as a finished spec, in the same shape as visualDirection.
-- applications: where and how the brand shows up — specific surfaces, with what appears on them.`,
+Every stress-test finding at critical or high severity has already been resolved or explicitly accepted before this step runs. Read them anyway: an accepted finding is a known trade-off, and the narrative should not lean on the part of the brand somebody already flagged.`,
 };
 
 /** The first DISCOVER call: nothing but the raw idea. */
@@ -524,6 +558,88 @@ ${otherStrategies}
 </other_strategies>
 
 Return only the rebuilt ${reason.direction} strategy. Keep its direction field set to ${reason.direction}. Do not adjust the others, and do not resolve the overlap by making your strategy vaguer — a strategy that says less is not a strategy that differs more.`;
+}
+
+
+/**
+ * The BRAND OS compile step.
+ *
+ * The last phase, and mostly not a generative one: the brand has already been
+ * decided and stress-tested, so nearly every field of the deliverable is a
+ * projection of the state. What the model is asked for is the handful of things
+ * nothing earlier produced — the purpose layer, a logo direction, sample copy, and
+ * the launch plan — written to fit decisions that are now fixed.
+ */
+export const BRAND_OS_INSTRUCTIONS = `# This step: the Brand OS
+
+The brand is decided. This step compiles it into the deliverable someone actually receives, and you are writing only the parts that do not exist yet.
+
+Everything already in the state — the positioning, the name, the tagline, the personality, the voice, the visual direction — is fixed and is copied across without you. It has been stress-tested and signed off. You are not reviewing it, improving it, or restating it.
+
+## What you write
+
+**purpose, mission, vision.** Three sentences that are commonly the emptiest part of a brand document, so earn them. Purpose is why the brand exists beyond money and must trace to the problem in discovery. Mission is what it is doing about that now. Vision is what the world looks like if it works. If any of the three would fit a company in an unrelated category, rewrite it.
+
+**coreSegments.** The distinct slices of the audience, from discovery and the chosen strategy. Each specific enough to exclude someone, and differing from each other in what they need — not one audience described three ways.
+
+**nameRationale.** Why the selected name works: the territory it came from, what it carries, and the drawback it was accepted in spite of. The pros and cons are already recorded against the candidate — use them rather than inventing new ones, and do not pretend the cons are not there.
+
+**archetype.** If the personality branch already has one, repeat it exactly. Only write a new one if it is missing.
+
+**logoDirection.** A direction a designer could act on: what form it takes, what it should evoke, what to avoid. Not a description of a finished logo. It has to follow from the visual direction and the personality that are already set.
+
+**sampleCopy.** A hero headline and a boilerplate paragraph, written *in the brand voice* — obeying its writing principles and, especially, its avoid list. This is the worked example every other writer will copy, so a cliché here propagates.
+
+**launch.** The go-to-market plan, which nothing earlier in the pipeline produced. The constraints in discovery bind it: do not propose a paid acquisition campaign for a brand whose constraints say it is sold founder-to-founder, and do not assume a budget or a team the state never mentioned. Channels come with a clause on why each fits this audience. The rollout is ordered milestones, earliest first, named as outcomes rather than activities.
+
+## Hold the line you were given
+
+Read the voice branch before writing a single sentence, and then write everything — the purpose, the narrative, the headline, the launch summary — inside it. A brand document whose own prose breaks the brand's writing rules is the most common way this deliverable fails.
+
+Read the stress-test findings too. Anything accepted as a trade-off is a known weakness: do not build the launch plan on top of it, and do not let the sample copy lean on the part of the brand somebody already flagged.
+
+No new strategy, no new names, no alternative taglines, no revisiting the visual direction.`;
+
+export type BrandOsPromptInput = {
+  /** The whole state, serialized, with unpopulated sections omitted. */
+  brandState: string;
+  /** Whether the personality branch already carries an archetype. */
+  hasArchetype: boolean;
+  /** Findings accepted as trade-offs rather than fixed. */
+  acceptedFindings: readonly string[];
+};
+
+/** The BRAND OS user turn. */
+export function buildBrandOsPrompt(input: BrandOsPromptInput): string {
+  const sections: string[] = [
+    `Here is the finished brand state. Every decision in it is settled.
+
+<brand_state>
+${input.brandState}
+</brand_state>`,
+  ];
+
+  if (input.hasArchetype) {
+    sections.push('The personality branch already has an archetype. Repeat it verbatim in the archetype field.');
+  } else {
+    sections.push('The personality branch has no archetype. Write one, with the clause that says how it is read here.');
+  }
+
+  if (input.acceptedFindings.length > 0) {
+    sections.push(`These stress-test findings were accepted as trade-offs rather than fixed.
+
+<accepted_trade_offs>
+${input.acceptedFindings.map((finding) => `- ${finding}`).join('\n')}
+</accepted_trade_offs>
+
+Do not build the launch plan on top of a known weakness, and do not let the sample copy lean on it.`);
+  }
+
+  sections.push(
+    'Write the new material for the Brand OS. Everything already decided is compiled from the state without you.',
+  );
+
+  return sections.join('\n\n');
 }
 
 /** The user-turn prompt: the state, then the ask. */

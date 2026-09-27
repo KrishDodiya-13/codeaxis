@@ -27,12 +27,21 @@ import {
 import type { PositionOptions } from './position.ts';
 import type { BattleOptions } from './battle.ts';
 import {
+  FinalizationBlockedError,
   StressTestInputError,
   UnauditableFindingsError,
   stressTest,
   validateStressTestRequest,
 } from './stress.ts';
 import type { StressTestOptions } from './stress.ts';
+import {
+  BrandOsInputError,
+  IncompleteBrandOsError,
+  IncompleteBrandStateError,
+  compileBrandOs,
+  validateBrandOsRequest,
+} from './brandos.ts';
+import type { BrandOsOptions } from './brandos.ts';
 
 /** Requests larger than this are rejected rather than buffered. */
 const MAX_BODY_BYTES = 1_000_000;
@@ -51,6 +60,8 @@ export type ServerOptions = {
   battle?: BattleOptions;
   /** Options for STRESS TEST, including the evidence retry budget. */
   stress?: StressTestOptions;
+  /** Options for the BRAND OS compile step. */
+  brandOs?: BrandOsOptions;
 } & BrandClientOptions;
 
 export function createDiscoverServer(options: ServerOptions = {}): Server {
@@ -60,6 +71,7 @@ export function createDiscoverServer(options: ServerOptions = {}): Server {
     position: positionOptions = {},
     battle: battleOptions = {},
     stress: stressOptions = {},
+    brandOs: brandOsOptions = {},
     model,
     effort,
     maxTokens,
@@ -69,7 +81,16 @@ export function createDiscoverServer(options: ServerOptions = {}): Server {
   const write = log ?? ((message: string) => process.stderr.write(`${message}\n`));
 
   return createServer((request, response) => {
-    handle(request, response, deriver, write, positionOptions, battleOptions, stressOptions).catch((error: unknown) => {
+    handle(
+      request,
+      response,
+      deriver,
+      write,
+      positionOptions,
+      battleOptions,
+      stressOptions,
+      brandOsOptions,
+    ).catch((error: unknown) => {
       // The handler deals with expected failures itself; reaching here means a
       // bug, so log it and return a generic 500 rather than leaking internals.
       write(`unhandled error: ${String(error)}`);
@@ -87,6 +108,7 @@ async function handle(
   positionOptions: PositionOptions,
   battleOptions: BattleOptions,
   stressOptions: StressTestOptions,
+  brandOsOptions: BrandOsOptions,
 ): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://localhost');
   const route = `${request.method} ${url.pathname}`;
@@ -109,7 +131,13 @@ async function handle(
     return;
   }
 
-  const ROUTES = ['/api/discover', '/api/position', '/api/battle', '/api/stress-test'];
+  const ROUTES = [
+    '/api/discover',
+    '/api/position',
+    '/api/battle',
+    '/api/stress-test',
+    '/api/brand-os',
+  ];
   if (!ROUTES.includes(url.pathname)) {
     sendJson(response, 404, {
       error: `No route for ${url.pathname}. The endpoints are ${ROUTES.map((r) => `POST ${r}`).join(', ')}.`,
@@ -160,6 +188,23 @@ async function handle(
 
       // The body is exactly the discovery object, as the spec defines it. A
       // caller decides sufficiency with `missingInformation.length === 0`.
+      sendJson(response, 200, result.value);
+      return;
+    }
+
+    if (url.pathname === '/api/brand-os') {
+      const osRequest = validateBrandOsRequest(parsed);
+      const result = await compileBrandOs(deriver, osRequest, brandOsOptions);
+      const { readiness } = result.value.brandOS.validation;
+
+      log(
+        `${route} 200 ${Date.now() - startedAt}ms ` +
+          `brand=${result.value.brandId} ` +
+          `readiness=${readiness.label}/${readiness.score} ` +
+          `flags=${result.value.brandOS.validation.openFlags.length} ` +
+          `tokens=${result.usage.inputTokens}/${result.usage.outputTokens}`,
+      );
+
       sendJson(response, 200, result.value);
       return;
     }
@@ -223,6 +268,25 @@ async function handle(
       sendJson(response, 502, { error: error.message, collisions: error.reasons });
       return;
     }
+    if (error instanceof IncompleteBrandStateError) {
+      // The request was well-formed; the state is not finished enough to compile.
+      log(`${route} 422 ${error.missing.length} gaps`);
+      sendJson(response, 422, { error: error.message, missing: error.missing });
+      return;
+    }
+    if (error instanceof IncompleteBrandOsError) {
+      log(`${route} 502 empty fields`);
+      sendJson(response, 502, { error: error.message, emptyFields: error.empty });
+      return;
+    }
+    if (error instanceof FinalizationBlockedError) {
+      log(`${route} 422 blocked by stress-test findings`);
+      sendJson(response, 422, {
+        error: error.message,
+        blocking: error.blocking,
+      });
+      return;
+    }
     if (error instanceof UnauditableFindingsError) {
       log(`${route} 502 findings not auditable`);
       sendJson(response, 502, { error: error.message, problems: error.problems });
@@ -232,7 +296,8 @@ async function handle(
       error instanceof DiscoverInputError ||
       error instanceof PositionInputError ||
       error instanceof BattleInputError ||
-      error instanceof StressTestInputError
+      error instanceof StressTestInputError ||
+      error instanceof BrandOsInputError
     ) {
       log(`${route} 400 ${error.message}`);
       sendJson(response, 400, { error: error.message });

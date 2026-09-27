@@ -4,8 +4,8 @@
  * Threads one `BrandState` through the steps in order, keeping a snapshot before
  * each one so any point in the pipeline can be inspected, diffed or rolled back.
  */
-import { BrandClient, EMPTY_USAGE, addUsage } from './client.ts';
-import type { BrandClientOptions, SectionDeriver, Usage } from './client.ts';
+import { EMPTY_USAGE, addUsage } from './client.ts';
+import type { SectionDeriver, Usage } from './client.ts';
 import {
   SECTION_ORDER,
   cloneState,
@@ -117,19 +117,6 @@ export async function runPipelineFromProject(
   options: RunOptions = {},
 ): Promise<PipelineResult> {
   return runPipeline(deriver, createInitialState(project), options);
-}
-
-/**
- * Convenience entry point: builds a client from `options` and runs to completion.
- * Use `runPipeline` directly when you want to supply your own deriver.
- */
-export async function brandFromIdea(
-  project: Project,
-  options: BrandClientOptions & RunOptions = {},
-): Promise<PipelineResult> {
-  const { model, effort, maxTokens, client, ...runOptions } = options;
-  const deriver = new BrandClient({ model, effort, maxTokens, client });
-  return runPipelineFromProject(deriver, project, runOptions);
 }
 
 /**

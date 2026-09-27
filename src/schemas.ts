@@ -11,6 +11,15 @@
 import { z } from 'zod';
 import { DIRECTIONS } from './archetypes.ts';
 import { TEST_TYPES } from './types.ts';
+
+/**
+ * The contract version.
+ *
+ * Bumped on any field rename, type change or removal — those are breaking, and a
+ * stored object built against an older version needs `migrateState` before it can be
+ * read. See the changelog in docs/brand-dna-contract.md.
+ */
+export const SCHEMA_VERSION = '1.0.0';
 import type { BrandState, BrandStateSection } from './types.ts';
 
 /**
@@ -22,6 +31,20 @@ import type { BrandState, BrandStateSection } from './types.ts';
  * `z.string().min(1)` across fields silently threw away the field guidance
  * before it reached the model. A fresh instance per field keeps it.
  */
+/**
+ * An object schema that rejects unknown keys.
+ *
+ * Used for every schema in this file, because both jobs here need it. For model
+ * output, a field we did not ask for is either a hallucination or a contract drift,
+ * and silently dropping it means never finding out. For a stored state, silently
+ * dropping an unrecognised key destroys it on the next save — so an unexpected field
+ * is a loud error that calls for a `schemaVersion` bump and a migration, which is
+ * what the Phase 6 change-control rule requires.
+ *
+ * Zod does not apply strictness recursively, so nested objects are wrapped too.
+ */
+const strictObject = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();
+
 const text = (description?: string) => {
   const base = z.string().min(1);
   return description === undefined ? base : base.describe(description);
@@ -30,13 +53,13 @@ const text = (description?: string) => {
 const severity = () =>
   z.enum(['low', 'medium', 'high']).describe('How much this matters: low, medium, or high.');
 
-export const ProjectSchema = z.object({
+export const ProjectSchema = strictObject({
   idea: text('What the user is building, in their own words.'),
   productType: z.string().optional().describe('e.g. "mobile app", "B2B SaaS", "physical product".'),
   goal: z.string().optional().describe('The stated goal for the brand.'),
 });
 
-export const DiscoverySchema = z.object({
+export const DiscoverySchema = strictObject({
   problem: text('The problem the product solves, stated from the user side.'),
   targetAudience: text('Who this is for, specifically enough to exclude someone.'),
   userNeed: text('The underlying need, not the feature that serves it.'),
@@ -64,7 +87,7 @@ export const DiscoverySchema = z.object({
  * seven documented fields are unchanged — so a consumer reading only those is
  * unaffected.
  */
-export const DiscoverResultSchema = z.object({
+export const DiscoverResultSchema = strictObject({
   problem: text(
     'The core problem being solved, restated clearly and specifically — not a paraphrase of the idea. The situational pain point, not the motivation under it.',
   ),
@@ -99,7 +122,7 @@ export const DiscoverResultSchema = z.object({
     ),
 });
 
-export const PositioningSchema = z.object({
+export const PositioningSchema = strictObject({
   category: text('The category the brand competes in, or the one it creates.'),
   valueProposition: text('The value delivered, in one sentence, without jargon.'),
   differentiator: text('The one thing true of this brand and not of its competitors.'),
@@ -119,7 +142,7 @@ export const PositioningSchema = z.object({
     .optional(),
 });
 
-const AlternativePositionSchema = z.object({
+const AlternativePositionSchema = strictObject({
   category: text('The category this alternative would have competed in.'),
   whyNotChosen: text('One line on why this angle was passed over, in terms of the discovery input.'),
 });
@@ -133,7 +156,7 @@ const AlternativePositionSchema = z.object({
  * single source of truth for both. `alternativePositions` and `assumptionsUsed`
  * are conditional, and documented in `position.ts`.
  */
-export const PositionResponseSchema = z.object({
+export const PositionResponseSchema = strictObject({
   category: text(
     'The market category, stated the way a user would categorize it, not as a marketing euphemism. "student team-formation tool", not "collaborative discovery platform".',
   ),
@@ -181,8 +204,7 @@ export const PositionResponseSchema = z.object({
  * a working field, like DISCOVER's `missingInformation`.
  */
 export const PositionResultSchema = PositionResponseSchema.extend({
-  categoryCheck: z
-    .object({
+  categoryCheck:strictObject({
       unrelatedProducts: z
         .array(text())
         .describe(
@@ -195,39 +217,95 @@ export const PositionResultSchema = PositionResponseSchema.extend({
     .describe('A check on your own category name. Apply it strictly.'),
 });
 
-export const NamingTerritorySchema = z.object({
-  name: text('Short label for the territory, e.g. "Craft & Provenance".'),
-  rationale: text('The idea the territory is built on.'),
-  examples: z.array(text()).min(2).describe('Example names that live inside this territory.'),
-});
-
-export const TaglineDirectionSchema = z.object({
-  tagline: text(),
-  rationale: text('Why this line follows from the positioning.'),
-  personalityFit: z.array(text()).describe('Which personality traits the line leans on.'),
-});
-
-export const MessagingLayerSchema = z.object({
-  level: text('Where this layer is used, e.g. "hero", "subhead", "proof point".'),
-  message: text(),
-  audience: text('Who this layer is speaking to.'),
-});
-
-export const ShapeSchema = z.object({
-  personality: z.array(text()).min(3).describe('Traits, as adjectives. Specific beats flattering.'),
-  principles: z.array(text()).min(2).describe('Rules the brand holds to, each one able to rule something out.'),
-  namingTerritories: z
-    .array(NamingTerritorySchema)
+export const PersonalitySchema = strictObject({
+  traits: z
+    .array(text())
+    .min(3)
+    .max(5)
+    .describe(
+      'Three to five specific adjectives. Who the brand is, not how it writes. "Innovative", "modern" and "friendly" are filler — a trait that would fit any product in the category is not a trait.',
+    ),
+  antiTraits: z
+    .array(text())
     .min(2)
-    .describe('Distinct naming directions, not variations on one.'),
-  taglineDirections: z.array(TaglineDirectionSchema).min(2),
-  messagingHierarchy: z
-    .array(MessagingLayerSchema)
+    .describe(
+      'What this brand explicitly is not. Each one should be something a reasonable person might otherwise have assumed, so the exclusion does real work.',
+    ),
+  values: z
+    .array(text())
     .min(2)
-    .describe('Ordered from broadest to most specific.'),
+    .describe('The principles driving decisions. Each must be able to rule something out.'),
+  archetype: text(
+    'An optional narrative archetype with a clause saying how it is read here, e.g. "The Coach — pushes you to be better, does not just cheerlead".',
+  ).optional(),
+  rationale: z
+    .array(text())
+    .min(1)
+    .describe('Why these follow from the chosen strategy and the positioning, citing both.'),
 });
 
-export const VisualDirectionSchema = z.object({
+export const NameCandidateSchema = strictObject({
+  name: text('The candidate name.'),
+  territory: text('Which territory it came from. Must be one of the territories listed.'),
+  pros: z.array(text()).min(1).describe('What this name does well, specific to this brand.'),
+  cons: z
+    .array(text())
+    .min(1)
+    .describe('The real drawback. A candidate with no downside has not been examined.'),
+});
+
+export const NamingSchema = strictObject({
+  territories: z
+    .array(text())
+    .min(2)
+    .describe(
+      'The naming approaches explored, e.g. "descriptive", "evocative", "coined", with a short parenthetical example. Genuinely different approaches, not variations on one.',
+    ),
+  candidates: z
+    .array(NameCandidateSchema)
+    .min(2)
+    .describe('Candidate names, each tied to one of the territories above.'),
+  selectedName: text('The chosen name, which must be one of the candidates.').optional(),
+  tagline:strictObject({
+      candidates: z.array(text()).min(2).describe('Tagline candidates that carry the positioning.'),
+      selected: text('The chosen tagline, which must be one of the candidates.').optional(),
+    })
+    .describe('The tagline exploration, and the line chosen from it.'),
+});
+
+export const MessagingHierarchySchema = strictObject({
+  primaryMessage: text('The one thing to say, in one sentence.'),
+  supportingMessages: z
+    .array(text())
+    .min(1)
+    .describe('What backs the primary message up, ordered most to least important.'),
+});
+
+export const VoiceSchema = strictObject({
+  toneAttributes: z
+    .array(text())
+    .min(2)
+    .describe(
+      'How the brand sounds. Distinct from personality traits, which are who it is — a brand can be ambitious and still write calmly. Qualified attributes beat bare adjectives: "confident, not arrogant".',
+    ),
+  writingPrinciples: z
+    .array(text())
+    .min(2)
+    .describe(
+      'The rules to follow, at a level a writer can act on: "short sentences", "speak to the deadline, not abstractly".',
+    ),
+  avoid: z
+    .array(text())
+    .min(2)
+    .describe(
+      'What never to write. Name the specific words and constructions this brand must not use, including the clichés it would otherwise reach for.',
+    ),
+  messagingHierarchy: MessagingHierarchySchema.describe(
+    'What the brand says first, and what backs it up.',
+  ),
+});
+
+export const VisualDirectionSchema = strictObject({
   colors: z
     .array(text())
     .min(2)
@@ -245,7 +323,7 @@ export const VisualDirectionSchema = z.object({
  * The `min(1)` on `risks` is load-bearing rather than cosmetic: a direction with no
  * stated risk is a generation failure, because every strategic bet costs something.
  */
-export const StrategyOptionSchema = z.object({
+export const StrategyOptionSchema = strictObject({
   direction: z
     .enum(DIRECTIONS)
     .describe('The archetype this strategy is built around. Use the one you were assigned.'),
@@ -295,7 +373,7 @@ export const StrategyCandidateSchema = StrategyOptionSchema.extend({
   ),
 });
 
-export const BattleResultSchema = z.object({
+export const BattleResultSchema = strictObject({
   strategies: z
     .array(StrategyCandidateSchema)
     .min(1)
@@ -303,7 +381,7 @@ export const BattleResultSchema = z.object({
 });
 
 /** A single regenerated strategy, for when one collided with another. */
-export const StrategyRegenerationSchema = z.object({
+export const StrategyRegenerationSchema = strictObject({
   strategy: StrategyCandidateSchema,
 });
 
@@ -314,7 +392,7 @@ export const StrategyRegenerationSchema = z.object({
  * content, so there is exactly one copy of the chosen strategy detail and no way
  * for the two to drift. `resolveSelectedStrategy` does the lookup.
  */
-export const SelectedStrategySchema = z.object({
+export const SelectedStrategySchema = strictObject({
   direction: z.enum(DIRECTIONS).describe('Which strategyOptions entry was chosen.'),
   chosenAt: text('When the choice was made, as an ISO 8601 timestamp.'),
   reasonChosen: text('Why this one was picked over the others, if a reason was given.').optional(),
@@ -327,7 +405,7 @@ export const SelectedStrategySchema = z.object({
  * vibe-check: `evidence` names the fields that triggered it, `impact` says what
  * actually breaks, and `recommendation` is something a person can carry out.
  */
-export const StressTestSchema = z.object({
+export const StressTestSchema = strictObject({
   type: z.enum(TEST_TYPES).describe('Which of the five categories this finding belongs to.'),
   severity: z
     .enum(['low', 'medium', 'high', 'critical'])
@@ -352,7 +430,7 @@ export const StressTestSchema = z.object({
     .optional(),
 });
 
-export const TypeEvaluationSchema = z.object({
+export const TypeEvaluationSchema = strictObject({
   type: z.enum(TEST_TYPES),
   status: z
     .enum(['evaluated', 'partial', 'not-testable'])
@@ -369,7 +447,7 @@ export const TypeEvaluationSchema = z.object({
  * from the findings in code, so they cannot disagree with the findings they
  * describe.
  */
-export const StressTestResultSchema = z.object({
+export const StressTestResultSchema = strictObject({
   tests: z
     .array(StressTestSchema)
     .describe(
@@ -380,44 +458,52 @@ export const StressTestResultSchema = z.object({
     .describe('One entry per test type you were asked to run, saying whether you could run it.'),
 });
 
-export const ConsistencyIssueSchema = z.object({
-  sections: z
+export const ConsistencySchema = strictObject({
+  status: z
+    .enum(['not-yet-checked', 'consistent', 'issues-found'])
+    .describe(
+      'consistent only when the sections genuinely agree. issues-found when they do not. Never not-yet-checked: that is the value before a check has run, so returning it would be a contradiction.',
+    ),
+  lastCheckedAt: text('When the check ran, as an ISO 8601 timestamp. Set by the pipeline; leave it out.').optional(),
+  checkedAgainstVersion: text('Set by the pipeline; leave it out.').optional(),
+  notes: z
     .array(text())
-    .min(1)
-    .describe('The BrandState sections that disagree, e.g. ["shape", "visualDirection"].'),
-  conflict: text('The contradiction, stated concretely.'),
-  severity: severity(),
-  resolution: text('How to reconcile the sections.'),
+    .describe(
+      'What you found, one entry per observation, each naming the BrandState fields involved. Record what holds together as well as what does not, so a later revision does not break something that was working.',
+    )
+    .optional(),
 });
 
-export const ConsistencySchema = z.object({
-  coherent: z.boolean().describe('True only if no high-severity issue was found.'),
-  issues: z.array(ConsistencyIssueSchema).describe('Empty if the sections agree.'),
-  strengths: z.array(text()).describe('What holds together well, so later revisions do not break it.'),
-});
-
-export const FinalBrandSchema = z.object({
-  name: text(),
-  tagline: text(),
-  positioningStatement: text(),
-  narrative: text('The elevator pitch, one paragraph.'),
-  personality: z.array(text()).min(3),
-  principles: z.array(text()).min(2),
-  voice: z
-    .object({
-      tone: text('How the brand sounds, in a sentence a writer could act on.'),
-      does: z.array(text()).min(2).describe('Words and constructions the brand uses.'),
-      donts: z.array(text()).min(2).describe('Words and constructions the brand avoids.'),
-    })
-    .describe('Concrete writing guidance, at the level of words rather than adjectives.'),
-  messaging: z.array(MessagingLayerSchema).min(2).describe('The messaging hierarchy as final copy.'),
-  visualIdentity: VisualDirectionSchema.describe(
-    'The visual direction as a finished spec, in the same shape as the visualDirection section.',
+/**
+ * What the lock step asks the model for.
+ *
+ * Only the two fields that are genuinely new. The name, tagline, personality, voice
+ * and visual identity are copied from the branches that own them, so locking cannot
+ * quietly rewrite a decision that was already made and stress-tested.
+ */
+export const FinalBrandDraftSchema = strictObject({
+  narrative: text(
+    'The elevator pitch in one paragraph: the brand explaining itself to a stranger who has thirty seconds.',
   ),
   applications: z
     .array(text())
     .min(2)
-    .describe('Where and how the brand shows up, e.g. "landing page hero".'),
+    .describe(
+      'Where and how the brand shows up — specific surfaces, with what appears on them, e.g. "landing page hero: primary message plus the tagline".',
+    ),
+});
+
+/** The locked snapshot as it is stored. Assembled in code, not by the model. */
+export const FinalBrandSchema = strictObject({
+  name: text(),
+  tagline: text(),
+  positioningStatement: text(),
+  narrative: text(),
+  personality: PersonalitySchema,
+  voice: VoiceSchema,
+  visualIdentity: VisualDirectionSchema,
+  applications: z.array(text()).min(2),
+  lockedAt: text(),
 });
 
 /**
@@ -428,14 +514,24 @@ export const FinalBrandSchema = z.object({
  * this — load such a state with `BrandStateFileSchema` and check its content
  * with `validateState`, which only inspects the sections actually derived.
  */
-export const BrandStateSchema = z.object({
+const MetadataSchema = {
+  id: text('Stable identifier for this brand project.'),
+  schemaVersion: text('The contract version this object was built against.'),
+  createdAt: text('ISO 8601.'),
+  updatedAt: text('ISO 8601. Bumped on every write.'),
+};
+
+export const BrandStateSchema = strictObject({
+  ...MetadataSchema,
   project: ProjectSchema,
   discovery: DiscoverySchema,
   positioning: PositioningSchema,
-  shape: ShapeSchema,
-  visualDirection: VisualDirectionSchema,
   strategyOptions: z.array(StrategyOptionSchema),
   selectedStrategy: SelectedStrategySchema.optional(),
+  personality: PersonalitySchema,
+  naming: NamingSchema,
+  visualDirection: VisualDirectionSchema,
+  voice: VoiceSchema,
   stressTests: z.array(StressTestSchema),
   consistency: ConsistencySchema,
   finalBrand: FinalBrandSchema.optional(),
@@ -455,13 +551,13 @@ export const BrandStateSchema = z.object({
 const looseText = z.string();
 const looseList = z.array(z.string());
 
-const LooseMessagingLayerSchema = z.object({
+const LooseMessagingLayerSchema = strictObject({
   level: looseText,
   message: looseText,
   audience: looseText,
 });
 
-const LooseVisualDirectionSchema = z.object({
+const LooseVisualDirectionSchema = strictObject({
   colors: looseList,
   typography: looseText,
   imagery: looseText,
@@ -470,13 +566,17 @@ const LooseVisualDirectionSchema = z.object({
   avoid: looseList,
 });
 
-export const BrandStateFileSchema = z.object({
-  project: z.object({
+export const BrandStateFileSchema = strictObject({
+  id: looseText,
+  schemaVersion: looseText,
+  createdAt: looseText,
+  updatedAt: looseText,
+  project: strictObject({
     idea: looseText,
     productType: looseText.optional(),
     goal: looseText.optional(),
   }),
-  discovery: z.object({
+  discovery: strictObject({
     problem: looseText,
     targetAudience: looseText,
     userNeed: looseText,
@@ -485,7 +585,7 @@ export const BrandStateFileSchema = z.object({
     assumptions: looseList,
     openQuestions: looseList,
   }),
-  positioning: z.object({
+  positioning: strictObject({
     category: looseText,
     valueProposition: looseText,
     differentiator: looseText,
@@ -493,20 +593,8 @@ export const BrandStateFileSchema = z.object({
     rationale: looseList,
     sourceDiscoveryHash: looseText.optional(),
   }),
-  shape: z.object({
-    personality: looseList,
-    principles: looseList,
-    namingTerritories: z.array(
-      z.object({ name: looseText, rationale: looseText, examples: looseList }),
-    ),
-    taglineDirections: z.array(
-      z.object({ tagline: looseText, rationale: looseText, personalityFit: looseList }),
-    ),
-    messagingHierarchy: z.array(LooseMessagingLayerSchema),
-  }),
-  visualDirection: LooseVisualDirectionSchema,
   strategyOptions: z.array(
-    z.object({
+    strictObject({
       direction: looseText,
       positioning: looseText,
       strengths: looseList,
@@ -516,15 +604,47 @@ export const BrandStateFileSchema = z.object({
       rationale: looseList,
     }),
   ),
-  selectedStrategy: z
-    .object({
+  selectedStrategy:strictObject({
       direction: looseText,
       chosenAt: looseText,
       reasonChosen: looseText.optional(),
     })
     .optional(),
+  personality: strictObject({
+    traits: looseList,
+    antiTraits: looseList,
+    values: looseList,
+    archetype: looseText.optional(),
+    rationale: looseList,
+  }),
+  naming: strictObject({
+    territories: looseList,
+    candidates: z.array(
+      strictObject({
+        name: looseText,
+        territory: looseText,
+        pros: looseList,
+        cons: looseList,
+      }),
+    ),
+    selectedName: looseText.optional(),
+    tagline: strictObject({
+      candidates: looseList,
+      selected: looseText.optional(),
+    }),
+  }),
+  visualDirection: LooseVisualDirectionSchema,
+  voice: strictObject({
+    toneAttributes: looseList,
+    writingPrinciples: looseList,
+    avoid: looseList,
+    messagingHierarchy: strictObject({
+      primaryMessage: looseText,
+      supportingMessages: looseList,
+    }),
+  }),
   stressTests: z.array(
-    z.object({
+    strictObject({
       type: looseText,
       severity: looseText,
       issue: looseText,
@@ -534,42 +654,177 @@ export const BrandStateFileSchema = z.object({
       status: looseText.optional(),
     }),
   ),
-  consistency: z.object({
-    coherent: z.boolean(),
-    issues: z.array(
-      z.object({
-        sections: looseList,
-        conflict: looseText,
-        severity: severity(),
-        resolution: looseText,
-      }),
-    ),
-    strengths: looseList,
+  consistency: strictObject({
+    status: looseText,
+    lastCheckedAt: looseText.optional(),
+    checkedAgainstVersion: looseText.optional(),
+    notes: looseList.optional(),
   }),
-  finalBrand: z
-    .object({
+  finalBrand:strictObject({
       name: looseText,
       tagline: looseText,
       positioningStatement: looseText,
       narrative: looseText,
-      personality: looseList,
-      principles: looseList,
-      voice: z.object({ tone: looseText, does: looseList, donts: looseList }),
-      messaging: z.array(LooseMessagingLayerSchema),
+      personality: strictObject({
+        traits: looseList,
+        antiTraits: looseList,
+        values: looseList,
+        archetype: looseText.optional(),
+        rationale: looseList,
+      }),
+      voice: strictObject({
+        toneAttributes: looseList,
+        writingPrinciples: looseList,
+        avoid: looseList,
+        messagingHierarchy: strictObject({
+          primaryMessage: looseText,
+          supportingMessages: looseList,
+        }),
+      }),
       visualIdentity: LooseVisualDirectionSchema,
       applications: looseList,
+      lockedAt: looseText,
     })
     .optional(),
+});
+
+
+/*
+ * The Brand OS — the compiled deliverable.
+ *
+ * Most of it is a projection of decisions already made and already stress-tested, so
+ * those fields are compiled in code rather than asked for again. Only what is
+ * genuinely new is generated, which is what `BrandOsDraftSchema` covers: the
+ * purpose/mission/vision layer, a logo direction, sample copy, and the launch plan —
+ * nothing earlier in the pipeline produced any of those.
+ */
+
+export const RolloutMilestoneSchema = strictObject({
+  milestone: text('What happens, named as an outcome rather than an activity.'),
+  timing: text('When, relative to launch, e.g. "4 weeks before launch", "launch week", "month 2".'),
+  detail: text('What it involves, concretely enough to plan against.'),
+});
+
+export const BrandOsDraftSchema = strictObject({
+  purpose: text(
+    'Why the brand exists beyond making money, in one sentence. Must follow from the problem in discovery — not a generic mission-statement sentiment that would fit any company.',
+  ),
+  mission: text('What the brand is doing about that purpose now, in one sentence. Concrete and current.'),
+  vision: text(
+    'What the world looks like if the brand succeeds, in one sentence. Specific to this category, not "a better future for everyone".',
+  ),
+  coreSegments: z
+    .array(text())
+    .min(2)
+    .describe(
+      'The distinct slices of the audience this serves, drawn from discovery and the chosen strategy. Each must be specific enough to exclude someone, and they should differ from each other in what they need.',
+    ),
+  nameRationale: text(
+    'Why the selected name works, in two or three sentences: the territory it came from, what it carries, and the drawback it was chosen in spite of. Use the pros and cons already recorded against it.',
+  ),
+  archetype: text(
+    'The narrative archetype, with the clause that says how it is read here. Only supply this if the personality branch has none; otherwise repeat the existing one verbatim.',
+  ),
+  logoDirection: text(
+    'The logo concept a designer could act on: what form it takes, what it should evoke, and what to avoid. Not a description of a finished logo — a direction. Must follow from the visual direction and the personality already decided.',
+  ),
+  sampleCopy:strictObject({
+      headline: text(
+        'A hero headline written in the brand voice, obeying its writing principles and its avoid list.',
+      ),
+      boilerplate: text(
+        'The standard one-paragraph description of the company, as it would appear at the foot of a press release.',
+      ),
+    })
+    .describe('Copy written in the brand voice, as a worked example for whoever writes the rest.'),
+  launch:strictObject({
+      goToMarketSummary: text(
+        'How this brand reaches its first users, in a short paragraph. Must respect the constraints recorded in discovery — do not propose a paid campaign for a brand whose constraints say it is sold founder-to-founder.',
+      ),
+      keyChannels: z
+        .array(text())
+        .min(2)
+        .describe(
+          'Where the brand shows up to acquire users, each with a clause on why it fits this audience. Not a list of every channel that exists.',
+        ),
+      rolloutSequence: z
+        .array(RolloutMilestoneSchema)
+        .min(3)
+        .describe('Ordered milestones, earliest first.'),
+    })
+    .describe('The go-to-market plan. Nothing earlier in the pipeline produced this.'),
+});
+
+export const ReadinessCheckSchema = strictObject({
+  item: text(),
+  passed: z.boolean(),
+  detail: text(),
+});
+
+export const BrandOsSchema = strictObject({
+  strategy: strictObject({
+    purpose: text(),
+    mission: text(),
+    vision: text(),
+    targetAudience: text(),
+    coreSegments: z.array(text()).min(1),
+    positioningStatement: text(),
+    competitiveDifferentiation: text(),
+  }),
+  identity: strictObject({
+    name: text(),
+    nameRationale: text(),
+    coreValues: z.array(text()).min(1),
+    personalityTraits: z.array(text()).min(1),
+    archetype: text(),
+  }),
+  visual: strictObject({
+    logoDirection: text(),
+    colorPalette: z.array(text()).min(1),
+    typographySystem: text(),
+    imageryStyle: text(),
+  }),
+  voice: strictObject({
+    toneGuidelines: z.array(text()).min(1),
+    messagingPillars: z.array(text()).min(1),
+    taglines: z.array(text()).min(1),
+    sampleCopy: strictObject({ headline: text(), boilerplate: text() }),
+  }),
+  launch: strictObject({
+    goToMarketSummary: text(),
+    keyChannels: z.array(text()).min(1),
+    rolloutSequence: z.array(RolloutMilestoneSchema).min(1),
+  }),
+  validation: strictObject({
+    stressTestSummary: strictObject({
+      critical: z.number(),
+      high: z.number(),
+      medium: z.number(),
+      low: z.number(),
+      open: z.number(),
+      acknowledged: z.number(),
+      resolved: z.number(),
+    }),
+    risks: z.array(text()),
+    openFlags: z.array(text()),
+    readiness: strictObject({
+      score: z.number(),
+      label: z.enum(['ready', 'ready-with-caveats', 'not-ready']),
+      checklist: z.array(ReadinessCheckSchema).min(1),
+    }),
+  }),
 });
 
 /** The schema each section validates against, for state-level validation. */
 export const sectionSchemas = {
   discovery: DiscoverySchema,
   positioning: PositioningSchema,
-  shape: ShapeSchema,
-  visualDirection: VisualDirectionSchema,
   strategyOptions: z.array(StrategyOptionSchema),
   selectedStrategy: SelectedStrategySchema,
+  personality: PersonalitySchema,
+  naming: NamingSchema,
+  visualDirection: VisualDirectionSchema,
+  voice: VoiceSchema,
   stressTests: z.array(StressTestSchema),
   consistency: ConsistencySchema,
   finalBrand: FinalBrandSchema,

@@ -14,6 +14,23 @@ import type { BrandStateSection } from './types.ts';
 
 export const DEFAULT_MODEL = 'claude-opus-5';
 
+/**
+ * Whether a server-side credential is configured.
+ *
+ * The SDK resolves credentials itself and fails at call time, which for a server means
+ * it starts cleanly and then fails every request. Checking up front lets the caller say
+ * so once, at startup, instead.
+ *
+ * Only env vars are checked: an `ant auth login` profile also works and is not visible
+ * here, so a false result means "probably not configured", not "definitely not". It is
+ * used for a warning, never to block a request.
+ */
+export function hasCredentialEnv(): boolean {
+  return (
+    (process.env.ANTHROPIC_API_KEY ?? '') !== '' || (process.env.ANTHROPIC_AUTH_TOKEN ?? '') !== ''
+  );
+}
+
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export type BrandClientOptions = {
@@ -64,6 +81,14 @@ export type DeriveOptions = {
    * answers. The cached system prefix is unaffected either way.
    */
   userPrompt?: string;
+  /**
+   * Replaces the per-section instruction block in the `system` array.
+   *
+   * The BRAND OS compile step uses this: it is not a section step, so the
+   * instructions for the section it writes to are the wrong ones. The cached
+   * methodology prefix is unaffected either way.
+   */
+  instructions?: string;
 };
 
 /** Thrown when the model returns something the step's schema rejects. */
@@ -135,7 +160,7 @@ export class BrandClient {
       max_tokens: this.maxTokens,
       system: [
         { type: 'text' as const, text: METHODOLOGY, cache_control: { type: 'ephemeral' as const } },
-        { type: 'text' as const, text: STEP_INSTRUCTIONS[section] },
+        { type: 'text' as const, text: options.instructions ?? STEP_INSTRUCTIONS[section] },
       ],
       messages: [
         {

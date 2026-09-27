@@ -5,7 +5,7 @@
  * Every subcommand operates on a run file, so a pipeline can be stopped,
  * inspected, edited, rolled back and resumed between invocations.
  */
-import { BrandClient, RefusalError, SectionParseError } from './client.ts';
+import { BrandClient, RefusalError, SectionParseError, hasCredentialEnv } from './client.ts';
 import type { Effort } from './client.ts';
 import { DiscoverResultSchema } from './schemas.ts';
 import { discover } from './discover.ts';
@@ -20,7 +20,13 @@ import {
 } from './position.ts';
 import { createDiscoverServer, listen } from './server.ts';
 import { renderMarkdown } from './report.ts';
-import { MissingDependencyError, STEPS, StrategySelectionRequiredError, runStep } from './steps.ts';
+import {
+  MissingDependencyError,
+  MissingSelectionError,
+  STEPS,
+  StrategySelectionRequiredError,
+  runStep,
+} from './steps.ts';
 import {
   BattleInputError,
   IndistinctStrategiesError,
@@ -31,6 +37,13 @@ import {
 } from './battle.ts';
 import { DIRECTIONS } from './archetypes.ts';
 import { resolveSelectedStrategy } from './state.ts';
+import {
+  BrandOsInputError,
+  IncompleteBrandOsError,
+  IncompleteBrandStateError,
+  compileBrandOs,
+  validateBrandOsRequest,
+} from './brandos.ts';
 import {
   FinalizationBlockedError,
   StressTestInputError,
@@ -54,7 +67,7 @@ import {
   stableStringify,
   validateState,
 } from './state.ts';
-import { InvalidRunFileError, loadState, saveState } from './store.ts';
+import { InvalidRunFileError, loadState, loadStateWithMigration, saveState } from './store.ts';
 import type { BrandState, BrandStateSection, Project } from './types.ts';
 
 const USAGE = `brandstate — build a brand by threading one BrandState through a pipeline of AI calls.
@@ -74,7 +87,9 @@ Usage
   brandstate stress-test           Stress-test a saved run and record the findings.
   brandstate findings              List the findings and the finalization gate.
   brandstate acknowledge <type>    Accept or resolve a finding, unblocking the gate.
-  brandstate serve                 Serve all four endpoints.
+  brandstate brand-os              Compile a saved run into the Brand OS deliverable.
+  brandstate migrate               Bring a saved run onto the current contract.
+  brandstate serve                 Serve all five endpoints.
 
 Options
   --run <path>        Run file. Default: runs/brand.json
@@ -99,6 +114,8 @@ Options
   --scope <list>      For "stress-test": comma-separated test types to re-run.
   --issue <text>      For "acknowledge": match a finding whose issue contains this.
   --resolved          For "acknowledge": mark resolved rather than acknowledged.
+  --out <path>        For "brand-os": write the deliverable to this JSON file.
+  --draft             For "brand-os": compile despite open blocking findings.
   --port <n>          For "serve". Default: 3000
   --host <name>       For "serve". Default: 127.0.0.1
 
@@ -565,6 +582,67 @@ Fix them and re-run, or accept one: brandstate acknowledge <type> --run ${path}
   );
 }
 
+async function commandBrandOs(args: Args): Promise<void> {
+  const path = runPath(args);
+  const state = await loadState(path);
+
+  const request = validateBrandOsRequest({
+    brandState: state,
+    ...(args.flags.has('draft') ? { allowUnvalidated: true } : {}),
+  });
+
+  const result = await compileBrandOs(clientFrom(args), request);
+  const { readiness, openFlags } = result.value.brandOS.validation;
+
+  const out = flagString(args, 'out');
+  if (out === undefined) {
+    process.stdout.write(`${stableStringify(result.value, 2)}
+`);
+  } else {
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const { dirname } = await import('node:path');
+    await mkdir(dirname(out), { recursive: true });
+    await writeFile(out, `${stableStringify(result.value, 2)}
+`, 'utf8');
+    process.stderr.write(`Saved ${out}
+`);
+  }
+
+  process.stderr.write(`
+Readiness: ${readiness.label} (${readiness.score}/100)
+`);
+  for (const check of readiness.checklist) {
+    process.stderr.write(`  ${check.passed ? '[x]' : '[ ]'} ${check.item} — ${check.detail}
+`);
+  }
+  if (openFlags.length > 0) {
+    process.stderr.write(`
+${openFlags.length} flag(s) a reader needs to know about:
+`);
+    for (const flag of openFlags) process.stderr.write(`  - ${flag}
+`);
+  }
+}
+
+async function commandMigrate(args: Args): Promise<void> {
+  const path = runPath(args);
+  const result = await loadStateWithMigration(path);
+
+  if (!result.migrated) {
+    process.stdout.write(`${path} is already on schema ${result.state.schemaVersion}.
+`);
+    return;
+  }
+
+  await saveState(path, result.state);
+  process.stdout.write(
+    `Migrated ${path} from ${result.from} to ${result.state.schemaVersion}.
+`,
+  );
+  for (const note of result.notes) process.stdout.write(`  - ${note}
+`);
+}
+
 async function commandServe(args: Args): Promise<void> {
   const portFlag = flagString(args, 'port');
   if (portFlag !== undefined && !/^\d+$/.test(portFlag)) {
@@ -576,6 +654,13 @@ async function commandServe(args: Args): Promise<void> {
     model: flagString(args, 'model'),
     effort: flagString(args, 'effort') as never,
   });
+
+  if (!hasCredentialEnv()) {
+    process.stderr.write(
+      'Warning: neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN is set. Requests will fail\n' +
+        '  unless an `ant auth login` profile is active. Keys stay server-side either way.\n\n',
+    );
+  }
 
   const port = await listen(server, portFlag === undefined ? 3000 : Number(portFlag), host);
   process.stderr.write(
@@ -622,6 +707,8 @@ async function main(): Promise<void> {
     'stress-test': commandStressTest,
     findings: commandFindings,
     acknowledge: commandAcknowledge,
+    migrate: commandMigrate,
+    'brand-os': commandBrandOs,
     serve: commandServe,
   };
 
@@ -645,9 +732,17 @@ main().catch((error: unknown) => {
     error instanceof IndistinctStrategiesError ||
     error instanceof StressTestInputError ||
     error instanceof UnauditableFindingsError ||
-    error instanceof FinalizationBlockedError
+    error instanceof FinalizationBlockedError ||
+    error instanceof MissingSelectionError ||
+    error instanceof BrandOsInputError ||
+    error instanceof IncompleteBrandOsError
   ) {
     fail(error.message);
+  }
+  if (error instanceof IncompleteBrandStateError) {
+    fail(
+      `${error.message}\n\nMissing:\n${error.missing.map((entry) => `  - ${entry}`).join('\n')}`,
+    );
   }
   if (error instanceof DiscoveryIncompleteError) {
     const questions = error.openQuestions.map((question) => `  - ${question}`).join('\n');
