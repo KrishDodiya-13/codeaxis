@@ -5,13 +5,14 @@ import type { BrandState, Direction, StrategyOption } from 'brandstate'
 import { directionLabel } from '@/lib/strategy'
 import { FieldLabel } from '@/components/project/panel'
 import { cn } from '@/lib/utils'
-import { DotList, EmptyState, SectionHeading, btnPrimary, btnSecondary, linkButton } from './ui'
+import { Arrow, DotList, EmptyState, SectionHeading, Stamp, btnPrimary, btnSecondary, linkButton, SPRING } from './ui'
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E']
 
 function DirectionCard({
   option,
   letter,
+  index,
   chosen,
   dimmed,
   busy,
@@ -20,6 +21,8 @@ function DirectionCard({
 }: {
   option: StrategyOption
   letter: string
+  /** Position in the row, for the staggered entrance. */
+  index: number
   chosen: boolean
   dimmed: boolean
   busy: boolean
@@ -32,21 +35,40 @@ function DirectionCard({
   return (
     <article
       aria-label={`Direction ${letter}: ${option.name}`}
+      style={{ animationDelay: `${index * 90}ms` }}
       className={cn(
-        'flex flex-col rounded-3xl border-2 bg-white p-5 transition-[opacity,box-shadow] duration-300',
-        chosen ? 'border-poster-ink shadow-[6px_6px_0_0_#111]' : 'border-poster-ink/25',
+        'group/card relative flex flex-col rounded-3xl border-2 bg-white p-5',
+        'animate-in fade-in-0 slide-in-from-bottom-4 fill-mode-backwards duration-500',
+        // Lifts and tilts a touch on hover, like the stickers on /new.
+        'transition-[opacity,box-shadow,transform,border-color] duration-300 hover:-translate-y-1 hover:rotate-[-0.6deg]',
+        SPRING,
+        'motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:hover:rotate-0',
+        chosen
+          ? 'border-poster-ink bg-[linear-gradient(180deg,rgba(95,181,122,0.14),#fff_45%)] shadow-[6px_6px_0_0_#111]'
+          : 'border-poster-ink/25 hover:border-poster-ink hover:shadow-[6px_6px_0_0_#5fb57a]',
         dimmed && 'opacity-55 hover:opacity-100 focus-within:opacity-100',
       )}
     >
+      {chosen && (
+        <Stamp className="absolute -top-3 right-4 z-10 px-4 py-1.5 text-xs shadow-[3px_3px_0_0_#111]">✓ Chosen</Stamp>
+      )}
       <div className="flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-2 rounded-full border-2 border-poster-ink p-[3px] pr-3 text-[11px] font-extrabold uppercase tracking-wide">
-          <b className={cn('rounded-full px-2 py-0.5', chosen ? 'bg-poster-green' : 'bg-poster-ink/10')}>{letter}</b>
+          <b
+            className={cn(
+              'rounded-full px-2 py-0.5 group-hover/card:animate-wiggle motion-reduce:group-hover/card:animate-none',
+              chosen ? 'bg-poster-green' : 'bg-poster-ink/10',
+            )}
+          >
+            {letter}
+          </b>
           {directionLabel(option.direction)}
         </span>
-        {chosen && <span className="text-[11px] font-extrabold uppercase tracking-wide">✓ Chosen</span>}
       </div>
 
-      <h3 className="mt-4 font-display text-xl uppercase leading-[0.95] tracking-[-0.03em]">{option.name}</h3>
+      <h3 className="mt-4 font-display text-xl uppercase leading-[0.95] tracking-[-0.03em] transition-colors duration-300 group-hover/card:text-poster-green">
+        {option.name}
+      </h3>
       <p className="mt-3 font-semibold leading-snug">{option.coreIdea}</p>
 
       <div className="mt-4 space-y-4 text-sm">
@@ -122,7 +144,11 @@ function DirectionCard({
           aria-pressed={chosen}
           className={chosen ? cn(btnPrimary, 'disabled:border-poster-ink disabled:bg-poster-green disabled:text-poster-ink') : btnSecondary}
         >
-          {chosen ? '✓ Chosen' : 'Choose this'}
+          {chosen ? '✓ Chosen' : (
+            <>
+              Choose this <Arrow />
+            </>
+          )}
         </button>
         {chosen && !editing && (
           <button
@@ -161,7 +187,7 @@ export default function BattleTab({
 
   if (!state || state.positioning.category === '') {
     return (
-      <EmptyState title="Positioning first">
+      <EmptyState title="Positioning first" stamp="Locked">
         Brand Battle builds three directions as variants of one positioning. Generate it on the Position tab.
       </EmptyState>
     )
@@ -175,9 +201,10 @@ export default function BattleTab({
     return (
       <EmptyState
         title="Brand Battle"
+        stamp="Step 02"
         action={
           <button type="button" onClick={onGenerate} disabled={busy} className={btnPrimary}>
-            Generate 3 directions →
+            Generate 3 directions <Arrow />
           </button>
         }
       >
@@ -209,7 +236,7 @@ export default function BattleTab({
       </SectionHeading>
 
       {confirmRegenerate && (
-        <div className="rounded-2xl border-2 border-[#f2c94c] bg-[#f2c94c]/15 px-4 py-3" role="alert">
+        <div className="rounded-2xl border-2 border-[#f2c94c] bg-[#f2c94c]/15 px-4 py-3 animate-in fade-in-0 slide-in-from-top-1 duration-300" role="alert">
           <p className="text-sm font-extrabold">Regenerating discards your chosen direction.</p>
           <p className="mt-1 text-sm font-semibold">
             Shape and Visual were built on it and will be marked as needing an update.
@@ -229,12 +256,13 @@ export default function BattleTab({
         {options.length} directions, not ranked. Compare the risks and trade-offs, then choose one to develop.
       </p>
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-4 pt-3 xl:grid-cols-3">
         {options.map((o, i) => (
           <DirectionCard
             key={o.direction}
             option={o}
             letter={LETTERS[i] ?? String(i + 1)}
+            index={i}
             chosen={o.direction === chosen}
             dimmed={!!chosen && o.direction !== chosen}
             busy={busy}
@@ -245,12 +273,12 @@ export default function BattleTab({
       </div>
 
       {chosenOption && (
-        <div className="flex flex-wrap items-center gap-3 rounded-2xl border-2 border-poster-ink bg-poster-green/15 px-4 py-3">
+        <div key={chosenOption.direction} className="flex flex-wrap items-center gap-3 rounded-2xl border-2 border-poster-ink bg-poster-green/15 px-4 py-3 shadow-[4px_4px_0_0_#111] animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
           <p className="text-sm font-extrabold">
             ✓ Direction {LETTERS[options.indexOf(chosenOption)]} selected — &ldquo;{chosenOption.name}&rdquo;
           </p>
           <button type="button" onClick={onContinue} className={`ml-auto ${btnPrimary}`}>
-            Continue to Shape →
+            Continue to Shape <Arrow />
           </button>
         </div>
       )}

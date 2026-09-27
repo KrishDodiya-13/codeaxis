@@ -3,7 +3,7 @@
 import type { BrandState } from 'brandstate'
 import type { DecisionStatus, Stage } from '@/lib/strategy'
 import { FieldLabel } from '@/components/project/panel'
-import { Chips, DecisionField, EmptyState, SectionHeading, btnPrimary, btnSecondary } from './ui'
+import { Arrow, Chips, DecisionField, EmptyState, SectionHeading, btnPrimary, btnSecondary } from './ui'
 
 export const VISUAL_TEXT_FIELDS = [
   { key: 'typography', label: 'Typography direction' },
@@ -53,7 +53,7 @@ export default function VisualTab({
 }) {
   if (!state || state.personality.traits.length === 0) {
     return (
-      <EmptyState title="Shape first">
+      <EmptyState title="Shape first" stamp="Locked">
         Every visual choice has to trace back to a personality trait, so the visual direction is built after Shape.
       </EmptyState>
     )
@@ -64,9 +64,10 @@ export default function VisualTab({
     return (
       <EmptyState
         title="Visual direction"
+        stamp="Step 04"
         action={
           <button type="button" onClick={onGenerate} disabled={busy} className={btnPrimary}>
-            Generate visual direction →
+            Generate visual direction <Arrow />
           </button>
         }
       >
@@ -139,7 +140,7 @@ export default function VisualTab({
       <div className="flex flex-wrap items-center gap-3 border-t-2 border-poster-ink/10 pt-4">
         <p className="text-sm font-bold text-poster-ink/60">See how every decision connects.</p>
         <button type="button" onClick={onContinue} className={`ml-auto ${btnPrimary}`}>
-          View Brand DNA →
+          View Brand DNA <Arrow />
         </button>
       </div>
     </div>

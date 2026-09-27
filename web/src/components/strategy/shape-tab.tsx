@@ -4,7 +4,7 @@ import type { BrandState } from 'brandstate'
 import { isStageDone, type DecisionStatus, type Stage } from '@/lib/strategy'
 import { FieldLabel } from '@/components/project/panel'
 import { cn } from '@/lib/utils'
-import { Chips, DecisionField, DotList, EmptyState, SectionHeading, btnPrimary, btnSecondary } from './ui'
+import { Arrow, Chips, DecisionField, DotList, EmptyState, SectionHeading, btnPrimary, btnSecondary } from './ui'
 
 export const SHAPE_STAGES: Stage[] = ['personality', 'naming', 'voice']
 
@@ -83,7 +83,7 @@ export default function ShapeTab({
 }) {
   if (!state?.selectedStrategy) {
     return (
-      <EmptyState title="Choose a direction first">
+      <EmptyState title="Choose a direction first" stamp="Locked">
         Shape develops the direction you pick in Brand Battle — personality, naming and voice all follow from that choice.
       </EmptyState>
     )
@@ -96,9 +96,10 @@ export default function ShapeTab({
     return (
       <EmptyState
         title="Brand shape"
+        stamp="Step 03"
         action={
           <button type="button" onClick={() => onGenerate(SHAPE_STAGES)} disabled={busy} className={btnPrimary}>
-            Generate brand shape →
+            Generate brand shape <Arrow />
           </button>
         }
       >
@@ -117,7 +118,7 @@ export default function ShapeTab({
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border-2 border-dashed border-poster-ink/30 px-4 py-3">
           <p className="text-sm font-bold">Still to generate: {missing.join(', ')}.</p>
           <button type="button" onClick={() => onGenerate(missing)} disabled={busy} className={`ml-auto ${btnPrimary} h-9`}>
-            Continue generating →
+            Continue generating <Arrow />
           </button>
         </div>
       )}
@@ -326,7 +327,7 @@ export default function ShapeTab({
               : 'Pick a name and a tagline — Brand OS uses them.'}
           </p>
           <button type="button" onClick={onContinue} className={`ml-auto ${btnPrimary}`}>
-            Continue to Visual →
+            Continue to Visual <Arrow />
           </button>
         </div>
       )}

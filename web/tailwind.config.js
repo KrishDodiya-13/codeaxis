@@ -71,11 +71,17 @@ module.exports = {
           '0%, 100%': { transform: 'translateY(0)' },
           '50%': { transform: 'translateY(-6px)' },
         },
+        // Indeterminate progress bar: a segment sweeping across while a model call runs.
+        sweep: {
+          from: { transform: 'translateX(-100%)' },
+          to: { transform: 'translateX(350%)' },
+        },
       },
       animation: {
         draw: 'draw 1.6s 0.4s cubic-bezier(.6,0,.2,1) both',
         wiggle: 'wiggle 0.9s cubic-bezier(.3,1.6,.5,1)',
         bob: 'bob 3.2s ease-in-out infinite',
+        sweep: 'sweep 1.4s cubic-bezier(.6,0,.2,1) infinite',
         'spin-slow': 'spin 22s linear infinite',
         'spin-slower': 'spin 36s linear infinite reverse',
       },

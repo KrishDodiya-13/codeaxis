@@ -1,6 +1,7 @@
 import type { BrandState, Confidence } from 'brandstate'
 import { STAGE_LABELS, selectedOption, type StrategyWorkspace, type TabKey } from '@/lib/strategy'
 import { FieldLabel, Panel } from '@/components/project/panel'
+import { cn } from '@/lib/utils'
 import { ConfidenceTag, DotList } from './ui'
 
 interface Reasoning {
@@ -98,7 +99,7 @@ export default function ReasoningPanel({ tab, ws }: { tab: TabKey; ws: StrategyW
 
   return (
     <Panel index="AI" label="AI reasoning" className="lg:min-h-0">
-      <div className="space-y-5">
+      <div key={tab} className="space-y-5 animate-in fade-in-0 slide-in-from-right-2 duration-300">
         <div>
           <FieldLabel>Current recommendation</FieldLabel>
           <p className="mt-2 text-lg font-semibold leading-snug">{r.summary}</p>
@@ -147,7 +148,10 @@ export default function ReasoningPanel({ tab, ws }: { tab: TabKey; ws: StrategyW
           ) : (
             <ol className="mt-2 space-y-1.5 text-sm font-semibold">
               {history.map((h, i) => (
-                <li key={`${h.at}-${i}`} className="flex gap-2">
+                <li
+                  key={`${h.at}-${i}`}
+                  className={cn('flex gap-2', i === 0 && 'animate-in fade-in-0 slide-in-from-left-2 duration-500', i > 0 && 'text-poster-ink/60')}
+                >
                   <span aria-hidden="true">→</span>
                   <span>{h.text}</span>
                 </li>

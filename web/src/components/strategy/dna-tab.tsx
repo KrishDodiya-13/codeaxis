@@ -6,7 +6,7 @@ import type { Confidence } from 'brandstate'
 import { selectedOption, type StrategyWorkspace, type TabKey } from '@/lib/strategy'
 import { FieldLabel } from '@/components/project/panel'
 import { cn } from '@/lib/utils'
-import { ConfidenceTag, DotList, EmptyState, btnPrimary, btnSecondary } from './ui'
+import { Arrow, ConfidenceTag, DotList, EmptyState, SPRING, btnPrimary, btnSecondary } from './ui'
 import { SHAPE_KEYS } from './shape-tab'
 import { VISUAL_KEYS } from './visual-tab'
 
@@ -247,9 +247,22 @@ export default function DnaTab({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-bold">
-          {confirmed} of {nodes.length} decisions approved · click a node to see why
-        </p>
+        <div>
+          <p className="text-sm font-bold">
+            {confirmed} of {nodes.length} decisions approved · click a node to see why
+          </p>
+          <div className="mt-2 flex gap-1" aria-hidden="true">
+            {nodes.map((n) => (
+              <span
+                key={n.key}
+                className={cn(
+                  'h-2 w-6 rounded-full border-2 border-poster-ink transition-colors duration-500',
+                  n.status === 'confirmed' ? 'bg-poster-green' : n.status === 'stale' ? 'bg-[#f2c94c]' : 'bg-white',
+                )}
+              />
+            ))}
+          </div>
+        </div>
         <ul className="flex flex-wrap gap-3 text-[11px] font-extrabold uppercase tracking-wide" aria-label="Legend">
           {(['confirmed', 'assumption', 'stale', 'empty'] as NodeStatus[]).map((s) => (
             <li key={s} className="flex items-center gap-1.5">
@@ -260,7 +273,7 @@ export default function DnaTab({
         </ul>
       </div>
 
-      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="relative aspect-[16/10] min-h-[380px] w-full overflow-hidden rounded-3xl border-2 border-poster-ink/15 bg-white/60">
           <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             {EDGES.map(([a, b]) => {
@@ -276,49 +289,67 @@ export default function DnaTab({
                   x2={to.x}
                   y2={to.y}
                   vectorEffect="non-scaling-stroke"
+                  strokeWidth={lit ? 2.5 : 1.5}
+                  strokeDasharray={to.status === 'empty' || staleEdge ? '5 5' : undefined}
+                  // Edges fade in behind the nodes as they pop in. (A stroke draw-in breaks
+                  // here: pathLength and a non-uniformly scaled SVG turn it into dashes.)
+                  style={{ animationDelay: '0.3s' }}
                   className={cn(
+                    'animate-in fade-in-0 fill-mode-backwards duration-700',
                     'transition-[stroke,stroke-width] duration-200',
                     lit ? 'stroke-poster-ink' : staleEdge ? 'stroke-[#d4a72c]' : 'stroke-poster-ink/20',
                   )}
-                  strokeWidth={lit ? 2.5 : 1.5}
-                  strokeDasharray={to.status === 'empty' || staleEdge ? '5 5' : undefined}
                 />
               )
             })}
           </svg>
 
-          {nodes.map((n) => (
-            <button
+          {nodes.map((n, i) => (
+            // The wrapper owns the centring translate; the button owns the entrance and hover
+            // transforms, so neither overrides the other mid-animation.
+            <div
               key={n.key}
-              type="button"
-              onClick={() => setSelected(selected === n.key ? null : n.key)}
-              aria-pressed={selected === n.key}
-              aria-label={`${n.label}: ${n.statusText}`}
               style={{ left: `${n.x}%`, top: `${n.y}%` }}
-              className={cn(
-                'absolute w-[min(26%,170px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border-2 px-3 py-2 text-left transition-transform duration-200 hover:scale-[1.04] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-poster-green/50',
-                NODE_STYLE[n.status],
-                selected === n.key && 'scale-[1.06] shadow-[4px_4px_0_0_#111]',
-              )}
+              className="absolute w-[min(26%,170px)] -translate-x-1/2 -translate-y-1/2"
             >
-              {n.status === 'stale' && (
-                // Pulses a halo rather than the node, so the text stays readable while it signals.
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute -inset-1.5 animate-pulse rounded-[20px] ring-4 ring-[#f2c94c] motion-reduce:animate-none"
-                />
-              )}
-              <span className="block text-[11px] font-extrabold uppercase tracking-wide">{n.label}</span>
-              {/* No `block` here: it would override line-clamp's -webkit-box and let the node grow. */}
-              <span className="mt-0.5 line-clamp-2 text-xs font-semibold leading-tight">{n.decision ?? n.statusText}</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => setSelected(selected === n.key ? null : n.key)}
+                aria-pressed={selected === n.key}
+                aria-label={`${n.label}: ${n.statusText}`}
+                style={{ animationDelay: `${i * 70}ms` }}
+                className={cn(
+                  'relative w-full rounded-2xl border-2 px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-poster-green/50',
+                  'animate-in fade-in-0 zoom-in-75 fill-mode-backwards duration-500',
+                  'transition-[transform,box-shadow] duration-300 hover:-rotate-2 hover:scale-[1.05] motion-reduce:transition-none motion-reduce:hover:transform-none',
+                  SPRING,
+                  NODE_STYLE[n.status],
+                  selected === n.key && 'scale-[1.06] shadow-[4px_4px_0_0_#111]',
+                )}
+              >
+                {n.status === 'stale' && (
+                  // Pulses a halo rather than the node, so the text stays readable while it signals.
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute -inset-1.5 animate-pulse rounded-[20px] ring-4 ring-[#f2c94c] motion-reduce:animate-none"
+                  />
+                )}
+                <span className="block text-[11px] font-extrabold uppercase tracking-wide">
+                  {n.status === 'confirmed' ? '● ' : n.status === 'assumption' ? '~ ' : n.status === 'stale' ? '⚠ ' : '○ '}
+                  {n.label}
+                </span>
+                {/* No `block` here: it would override line-clamp's -webkit-box and let the node grow. */}
+                <span className="mt-0.5 line-clamp-2 text-xs font-semibold leading-tight">{n.decision ?? n.statusText}</span>
+              </button>
+            </div>
           ))}
         </div>
 
         {active ? (
           <aside
+            key={active.key}
             aria-label={`${active.label} details`}
-            className="space-y-4 rounded-3xl border-2 border-poster-ink bg-white p-5"
+            className="space-y-4 rounded-3xl border-2 border-poster-ink bg-white p-5 shadow-[6px_6px_0_0_#5fb57a] animate-in fade-in-0 slide-in-from-right-4 duration-300"
           >
             <div className="flex items-start justify-between gap-3">
               <h3 className="font-display text-2xl uppercase leading-none tracking-[-0.03em]">{active.label}</h3>
@@ -370,11 +401,11 @@ export default function DnaTab({
             )}
             {active.tab === 'discover' ? (
               <Link href={`/project/${projectId}/discover`} className={btnPrimary}>
-                Change in Discovery →
+                Change in Discovery <Arrow />
               </Link>
             ) : active.tab ? (
               <button type="button" onClick={() => onGo(active.tab as TabKey)} className={btnPrimary}>
-                Change on {TAB_NAMES[active.tab as TabKey]} →
+                Change on {TAB_NAMES[active.tab as TabKey]} <Arrow />
               </button>
             ) : null}
           </aside>

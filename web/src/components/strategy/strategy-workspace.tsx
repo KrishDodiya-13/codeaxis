@@ -25,7 +25,8 @@ import { PosterRoom } from '@/components/landing/poster-section'
 import WorkflowNav from '@/components/project/workflow-nav'
 import { Panel } from '@/components/project/panel'
 import { cn } from '@/lib/utils'
-import { ErrorCard, ProgressSteps, btnPrimary, btnSecondary, linkButton, toLines } from './ui'
+import HoverLetters from '@/components/hover-letters'
+import { Arrow, ErrorCard, ProgressSteps, SPRING, Swash, btnPrimary, btnSecondary, linkButton, toLines } from './ui'
 import PositionTab from './position-tab'
 import BattleTab from './battle-tab'
 import ShapeTab, { SHAPE_STAGES } from './shape-tab'
@@ -124,6 +125,17 @@ function applyEdit(state: BrandState, key: string, text: string): BrandState {
   return next
 }
 
+/** A failed request: the message to show, and the technical detail when the server sent one. */
+class StrategyRequestError extends Error {
+  readonly detail?: string
+
+  constructor(message: string, detail?: string) {
+    super(message)
+    this.name = 'StrategyRequestError'
+    this.detail = detail
+  }
+}
+
 async function post(body: unknown): Promise<StrategyResponse> {
   const res = await fetch('/api/strategy', {
     method: 'POST',
@@ -132,9 +144,14 @@ async function post(body: unknown): Promise<StrategyResponse> {
   })
   const data: unknown = await res.json().catch(() => null)
   if (!res.ok) {
-    const message =
-      data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : 'The strategy request failed.'
-    throw new Error(message)
+    const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+    const message = typeof record.error === 'string' ? record.error : 'The strategy request failed.'
+    // In development the route appends ` — <detail>` to the message and also sends the
+    // detail on its own; strip the suffix so the card leads with the plain message.
+    const detail =
+      record.detail === undefined ? undefined : typeof record.detail === 'string' ? record.detail : JSON.stringify(record.detail)
+    const headline = detail && message.endsWith(` — ${detail}`) ? message.slice(0, -(detail.length + 3)) : message
+    throw new StrategyRequestError(headline, detail)
   }
   if (!data || typeof data !== 'object' || !('state' in data) || !('dna' in data)) {
     throw new Error('The response was not a valid brand state.')
@@ -148,7 +165,7 @@ export default function StrategyWorkspace({ id }: { id: string }) {
   const [loaded, setLoaded] = useState(false)
   const [tab, setTab] = useState<TabKey>('position')
   const [run, setRun] = useState<Run | null>(null)
-  const [error, setError] = useState<{ message: string; retry?: () => void } | null>(null)
+  const [error, setError] = useState<{ message: string; detail?: string; retry?: () => void } | null>(null)
 
   // Async calls read the latest workspace from here, not from a stale closure.
   const wsRef = useRef<Workspace | null>(null)
@@ -230,6 +247,7 @@ export default function StrategyWorkspace({ id }: { id: string }) {
           setRun({ stages, index: i, failed: true })
           setError({
             message: e instanceof Error ? e.message : 'The strategy request failed.',
+            detail: e instanceof StrategyRequestError ? e.detail : undefined,
             retry: () => void runStages(stages.slice(i)),
           })
           return
@@ -388,6 +406,22 @@ export default function StrategyWorkspace({ id }: { id: string }) {
   const activeIndex = TABS.findIndex((t) => t.key === tab)
   const staleLabels = (ws?.stale ?? []).map((s) => STAGE_LABELS[s])
   const needsDirection = (ws?.stale ?? []).length > 0 && !state?.selectedStrategy
+  // While a first generation runs or has just failed, the progress list and error card
+  // are the whole story; the tab's empty state would only repeat its own Generate button.
+  const hasOutput: Record<TabKey, boolean> = {
+    position: isStageDone(state, 'positioning'),
+    battle: (state?.strategyOptions.length ?? 0) > 0,
+    shape: SHAPE_STAGES.some((s) => isStageDone(state, s)),
+    visual: isStageDone(state, 'visualDirection'),
+    dna: true,
+  }
+  const hideContent = (!!run || !!error) && !hasOutput[tab]
+  const milestones = [
+    { label: 'Positioning', done: isStageDone(state, 'positioning') },
+    { label: option ? `Direction · ${option.name}` : 'Direction', done: !!option },
+    { label: 'Shape', done: SHAPE_STAGES.every((s) => isStageDone(state, s)) },
+    { label: 'Visual', done: isStageDone(state, 'visualDirection') },
+  ]
 
   const content = (() => {
     switch (tab) {
@@ -461,7 +495,15 @@ export default function StrategyWorkspace({ id }: { id: string }) {
       <PosterRoom />
       <WorkflowNav projectId={id} current="strategy" />
 
-      <div className="relative z-10 flex flex-wrap items-center gap-3 px-5 pt-5">
+      <div className="relative z-10 flex flex-wrap items-center gap-x-6 gap-y-3 px-5 pt-5">
+        {/* Same headline treatment as /new: letters lift on hover, a swash draws in once. */}
+        <h1 className="font-display text-[1.9rem] uppercase leading-none tracking-[-0.04em]">
+          <span className="relative inline-block">
+            <HoverLetters text="Strategy" />
+            <Swash className="top-[0.78em] h-[0.45em]" />
+          </span>
+          <HoverLetters text="." className="text-poster-green" />
+        </h1>
         <div role="tablist" aria-label="Strategy stages" onKeyDown={onTabKey} className="flex flex-wrap items-center gap-2">
           {TABS.map((t, i) => {
             const locked = lockReason(t.key, state)
@@ -483,13 +525,24 @@ export default function StrategyWorkspace({ id }: { id: string }) {
                 title={locked ?? undefined}
                 onClick={() => setTab(t.key)}
                 className={cn(
-                  'inline-flex items-center gap-2 whitespace-nowrap rounded-full border-2 py-1 pl-1 pr-4 text-xs font-extrabold uppercase tracking-wide focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-poster-green/40',
-                  selected && 'border-poster-ink bg-white shadow-[3px_3px_0_0_#111]',
-                  !selected && !locked && 'border-poster-ink/40 bg-poster-paper hover:border-poster-ink hover:text-poster-green',
+                  'group inline-flex items-center gap-2 whitespace-nowrap rounded-full border-2 py-1 pl-1 pr-4 text-xs font-extrabold uppercase tracking-wide focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-poster-green/40',
+                  'transition-[transform,box-shadow,border-color,color,background-color] duration-300 motion-reduce:transition-none',
+                  SPRING,
+                  selected && '-translate-y-0.5 border-poster-ink bg-white shadow-[3px_3px_0_0_#111]',
+                  !selected &&
+                    !locked &&
+                    'border-poster-ink/40 bg-poster-paper hover:-translate-y-0.5 hover:border-poster-ink hover:bg-white hover:text-poster-green hover:shadow-[3px_3px_0_0_#5fb57a] motion-reduce:hover:translate-y-0',
                   locked && 'cursor-not-allowed border-poster-ink/15 text-poster-ink/35',
                 )}
               >
-                <span className={cn('rounded-full px-2 py-0.5', selected ? 'bg-poster-green' : 'bg-poster-ink/10')}>
+                {/* The number tag wiggles on hover, like the landing's tags. */}
+                <span
+                  className={cn(
+                    'rounded-full px-2 py-0.5 transition-colors duration-300',
+                    !locked && 'group-hover:animate-wiggle motion-reduce:group-hover:animate-none',
+                    selected || done ? 'bg-poster-green' : 'bg-poster-ink/10',
+                  )}
+                >
                   {done ? '✓' : String(i + 1).padStart(2, '0')}
                 </span>
                 {t.label}
@@ -502,7 +555,7 @@ export default function StrategyWorkspace({ id }: { id: string }) {
       {ws && ws.stale.length > 0 && (
         <div
           role="status"
-          className="relative z-10 mx-5 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border-2 border-[#d4a72c] bg-[#f2c94c]/30 px-4 py-3"
+          className="relative z-10 mx-5 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border-2 border-poster-ink bg-[#f2c94c] px-4 py-3 shadow-[4px_4px_0_0_#111] animate-in fade-in-0 slide-in-from-top-2 duration-300"
         >
           <p className="text-sm font-extrabold">
             ⚠ {ws.staleCause ?? 'A decision changed'} → {staleLabels.join(', ')} may need update.
@@ -536,6 +589,7 @@ export default function StrategyWorkspace({ id }: { id: string }) {
               <div className="mb-5">
                 <ErrorCard
                   message={error.message}
+                  detail={error.detail}
                   onRetry={error.retry}
                   onDismiss={() => {
                     setError(null)
@@ -544,27 +598,44 @@ export default function StrategyWorkspace({ id }: { id: string }) {
                 />
               </div>
             )}
-            {content}
+            {!hideContent && (
+              // Keyed by tab so each switch replays a short rise-in.
+              <div key={tab} className="animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
+                {content}
+              </div>
+            )}
           </Panel>
         </div>
         <ReasoningPanel tab={tab} ws={ws} />
       </div>
 
       <footer className="relative z-10 flex flex-wrap items-center gap-4 border-t-2 border-poster-ink bg-poster-paper px-6 py-4">
-        <p className="text-sm font-extrabold">
-          {[
-            `Positioning ${isStageDone(state, 'positioning') ? '✓' : '○'}`,
-            `Direction ${option ? `✓ ${option.name}` : '○'}`,
-            `Shape ${SHAPE_STAGES.every((s) => isStageDone(state, s)) ? '✓' : '○'}`,
-            `Visual ${isStageDone(state, 'visualDirection') ? '✓' : '○'}`,
-          ].join('  ·  ')}
-        </p>
+        {/* Milestones fill green as they complete, like the workflow nav's done steps. */}
+        <ol className="flex flex-wrap items-center gap-2 text-xs font-extrabold uppercase tracking-wide" aria-label="Strategy progress">
+          {milestones.map((m, i) => (
+            <li key={i} className="flex items-center gap-2">
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full border-2 px-3 py-1 transition-colors duration-500',
+                  m.done ? 'border-poster-ink bg-poster-green' : 'border-dashed border-poster-ink/30 text-poster-ink/45',
+                )}
+              >
+                <span aria-hidden="true">{m.done ? '✓' : '○'}</span>
+                <span className="max-w-[16rem] truncate">{m.label}</span>
+                <span className="sr-only">{m.done ? '(done)' : '(to do)'}</span>
+              </span>
+              {i < milestones.length - 1 && (
+                <span aria-hidden="true" className={cn('h-0.5 w-4 rounded-full', m.done ? 'bg-poster-ink' : 'bg-poster-ink/20')} />
+              )}
+            </li>
+          ))}
+        </ol>
         {ready ? (
           <Link
             href={`/project/${id}/stress-test`}
-            className="ml-auto inline-flex h-11 items-center rounded-full border-2 border-poster-ink bg-poster-green px-6 font-extrabold hover:bg-poster-ink hover:text-poster-paper focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-poster-green/40"
+            className={cn(btnPrimary, 'ml-auto h-11 px-6 text-base')}
           >
-            Proceed to Stress Test →
+            Proceed to Stress Test <Arrow />
           </Link>
         ) : (
           <span className={cn(btnSecondary, 'ml-auto cursor-default border-poster-ink/20 text-poster-ink/45 hover:text-poster-ink/45')}>

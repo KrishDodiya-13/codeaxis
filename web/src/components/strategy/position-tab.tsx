@@ -12,6 +12,7 @@ import {
   SectionHeading,
   btnPrimary,
   btnSecondary,
+  Arrow,
 } from './ui'
 
 export type PositionField = 'category' | 'valueProposition' | 'differentiator' | 'competitiveAngle'
@@ -53,6 +54,7 @@ export default function PositionTab({
     return (
       <EmptyState
         title="Discovery comes first"
+        stamp="Locked"
         action={
           <Link href={`/project/${projectId}/discover`} className={btnPrimary}>
             ← Go to Discovery
@@ -70,9 +72,10 @@ export default function PositionTab({
     return (
       <EmptyState
         title="Position the brand"
+        stamp="Step 01"
         action={
           <button type="button" onClick={onGenerate} disabled={busy} className={btnPrimary}>
-            Generate positioning →
+            Generate positioning <Arrow />
           </button>
         }
       >
@@ -148,7 +151,7 @@ export default function PositionTab({
           {settled ? '✓ Positioning settled.' : 'Accept or edit each decision to settle positioning.'}
         </p>
         <button type="button" onClick={onContinue} className={`ml-auto ${settled ? btnPrimary : btnSecondary}`}>
-          Continue to Brand Battle →
+          Continue to Brand Battle <Arrow />
         </button>
       </div>
     </div>

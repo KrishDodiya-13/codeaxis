@@ -65,7 +65,7 @@ export function modelErrorResponse(e: unknown, stageLabel: string) {
     return errorResponse(503, e.message)
   }
   if (e instanceof ModelTimeoutError) {
-    return errorResponse(504, 'The model took too long to answer. Nothing was changed — try again.', e.message)
+    return errorResponse(504, 'The model took too long to answer. Nothing was changed, so it is safe to try again.', e.message)
   }
   // Valid JSON, wrong shape. Checked before SectionParseError, which it extends.
   if (e instanceof SchemaValidationError) {
@@ -90,6 +90,22 @@ export function modelErrorResponse(e: unknown, stageLabel: string) {
       e.message,
     )
   }
+  // The daily token quota (TPD) is its own case: waiting a minute won't help, and Groq
+  // says exactly when it resets ("try again in 1h5m45.024s"), so say that instead.
+  if (e instanceof ModelRequestError && e.status === 429 && /tokens per day|\(TPD\)/.test(e.message)) {
+    const wait = e.message.match(/try again in ((?:\d+h)?(?:\d+m)?(?:[\d.]+s)?)/)?.[1]
+    const readable = wait
+      ?.replace(/\.\d+s$/, 's')
+      .replace(/(\d+)h/, '$1h ')
+      .replace(/(\d+)m/, '$1m ')
+      .replace(/\s*\d+s$/, (s) => (/[hm]/.test(wait) ? '' : s))
+      .trim()
+    return errorResponse(
+      429,
+      `Today's Groq token quota is used up${readable ? `; it resets in about ${readable}` : ''}. Try again then, or upgrade the Groq tier.`,
+      e.message,
+    )
+  }
   if (e instanceof ModelRequestError && e.status === 429) {
     return errorResponse(429, 'Groq rate limit or quota reached. Wait, or set GROQ_MODEL to another model.', e.message)
   }
@@ -99,5 +115,5 @@ export function modelErrorResponse(e: unknown, stageLabel: string) {
 
   const detail = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
   console.error(`[brandos] ${stageLabel} failed`, e)
-  return errorResponse(502, `${stageLabel} failed. Nothing was changed — try again.`, detail)
+  return errorResponse(502, `${stageLabel} failed. Nothing was changed, so it is safe to try again.`, detail)
 }
