@@ -416,6 +416,9 @@ export default function StrategyWorkspace({ id }: { id: string }) {
     dna: true,
   }
   const hideContent = (!!run || !!error) && !hasOutput[tab]
+  // AI reasoning has nothing to say until this tab has output, so until then it stays out
+  // of the way and the main panel takes the full width.
+  const showReasoning = tab === 'dna' ? !!ws : hasOutput[tab]
   const milestones = [
     { label: 'Positioning', done: isStageDone(state, 'positioning') },
     { label: option ? `Direction · ${option.name}` : 'Direction', done: !!option },
@@ -572,8 +575,9 @@ export default function StrategyWorkspace({ id }: { id: string }) {
         </div>
       )}
 
-      <div className="relative z-10 grid flex-1 gap-5 p-5 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.42fr)]">
-        <div role="tabpanel" id="strategy-tabpanel" aria-labelledby={`tab-${tab}`} className="flex min-h-0 flex-col">
+      {/* Flex rather than grid, so the reasoning column's width can animate in. */}
+      <div className="relative z-10 flex flex-1 flex-col gap-5 p-5 lg:min-h-0 lg:flex-row">
+        <div role="tabpanel" id="strategy-tabpanel" aria-labelledby={`tab-${tab}`} className="flex min-h-0 min-w-0 flex-1 flex-col">
           <Panel index={String(activeIndex + 1).padStart(2, '0')} label={TABS[activeIndex].label} className="flex-1" busy={busy}>
             {run && (
               <div className="mb-5">
@@ -606,7 +610,14 @@ export default function StrategyWorkspace({ id }: { id: string }) {
             )}
           </Panel>
         </div>
-        <ReasoningPanel tab={tab} ws={ws} />
+        {showReasoning && (
+          // Desktop: the column grows in from the right edge, overshoots and settles
+          // (keyframe `reasoning-in`); overflow is clipped so the panel slides in rather
+          // than squashing. Stacked on small screens, where it simply fades in.
+          <div className="flex min-h-0 flex-col animate-in fade-in-0 duration-500 motion-reduce:animate-none lg:w-[29.5%] lg:min-w-[300px] lg:shrink-0 lg:animate-reasoning-in lg:overflow-hidden lg:motion-reduce:animate-none">
+            <ReasoningPanel tab={tab} ws={ws} />
+          </div>
+        )}
       </div>
 
       <footer className="relative z-10 flex flex-wrap items-center gap-4 border-t-2 border-poster-ink bg-poster-paper px-6 py-4">

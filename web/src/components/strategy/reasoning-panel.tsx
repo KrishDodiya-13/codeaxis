@@ -98,7 +98,7 @@ export default function ReasoningPanel({ tab, ws }: { tab: TabKey; ws: StrategyW
   const history = [...(ws?.history ?? [])].reverse().slice(0, 8)
 
   return (
-    <Panel index="AI" label="AI reasoning" className="lg:min-h-0">
+    <Panel index="AI" label="AI reasoning" className="flex-1 lg:min-h-0 lg:min-w-[300px]">
       <div key={tab} className="space-y-5 animate-in fade-in-0 slide-in-from-right-2 duration-300">
         <div>
           <FieldLabel>Current recommendation</FieldLabel>
