@@ -238,12 +238,10 @@ export default function DiscoveryWorkspace({ id }: { id: string }) {
   const answered = round ? Object.keys(round.answers).length : 0
   const questionsLeft = round ? Math.max(0, round.questions.length - round.index) : 0
   const complete = !!d && isDiscoveryComplete(d)
-  const status = thinking ? 'Working…' : 'Saved in this browser'
-
   return (
     <main className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-poster-paper text-poster-ink antialiased lg:h-[100svh]">
       <PosterRoom />
-      <WorkflowNav projectId={project.id} current="discover" projectName={project.name} status={status} />
+      <WorkflowNav projectId={project.id} current="discover" />
 
       <div className="relative z-10 grid flex-1 gap-5 p-5 lg:min-h-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,0.85fr)]">
         <Interview
