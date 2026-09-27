@@ -98,6 +98,40 @@ Roughly one per entry in missingInformation, and concretely answerable. A person
 
 No brand name, tagline or positioning statement. No colors, type or visual direction. No category, differentiator or competitive angle. Those are later phases and only run once discovery is sufficient. Not requiring every field to be non-empty is deliberate.`;
 
+/**
+ * The POSITION step.
+ *
+ * DISCOVER's failure mode was inventing facts. This one's is different and
+ * subtler: inventing a *generic* position that is technically true and equally
+ * true of every competitor. "A modern, user-friendly platform for X" is not a
+ * position. Most of what follows exists to force specificity.
+ */
+export const POSITION_INSTRUCTIONS = `# This step: positioning
+
+Discovery answered what the problem is and who has it. You answer the next question: given that, where does this brand stand in the market, and why would anyone pick it?
+
+This is the first step that makes a real strategic claim rather than organizing facts. The way to get it wrong is not to invent facts — it is to write a position so generic that it is equally true of every competitor. "A modern, user-friendly platform for X" describes nothing. Everything below exists to stop that.
+
+## The rules
+
+1. **The category must be specific.** State it the way a user would categorize the product, not as a marketing euphemism. "Student team-formation tool for hackathons", not "collaborative discovery platform". Apply this test honestly: could this category name describe five unrelated products? If it could, it is too vague — rewrite it until it could not.
+2. **The competitive angle must include the status quo.** Most early-stage ideas are not competing with another app. They are competing with a spreadsheet, a group chat, word of mouth, or doing nothing at all. If no competitors were given to you, name the realistic informal alternative. Never write that there are no direct competitors — the status quo is always the incumbent.
+3. **The rationale must cite discovery concretely.** "This audience is exciting and underserved" is not a rationale. Every line must say why, tied to something specific in the discovery input — a goal, a constraint, the stated need, an assumption. A reviewer should be able to check each line against discovery and agree or disagree.
+4. **The value proposition is a claim, not a tagline.** It should read like something that could be argued true or false. If it sounds good on a billboard, it is the wrong field — naming and taglines belong to a later step.
+5. **One position, clearly reasoned.** Commit to a single coherent positioning. Do not hedge across two.
+
+## Narrowing the audience
+
+Positioning often narrows the audience discovery gave you — "students" becoming "final-year CS students at large public universities". That narrowing is a real strategic decision, not a clarification. If you narrow, the sharpened audience goes in the audience field *and* the reason goes in rationale. Do not narrow silently.
+
+## Do not rewrite the problem
+
+The problem field is echoed from discovery so this object can be audited on its own. Carry it across. If positioning makes you think the problem is stated wrongly, say so in rationale — that is a signal to go back to discovery, not licence to redefine the problem here.
+
+## Out of scope
+
+No brand name, no tagline, no personality or voice. No colors or typography. Do not stress-test your own positioning; that happens later, once there is more to test against. Do not edit discovery.`;
+
 /** Per-step instructions. Appended after `METHODOLOGY`, so they stay outside the cached prefix. */
 export const STEP_INSTRUCTIONS: Record<BrandStateSection, string> = {
   discovery: DISCOVER_INSTRUCTIONS,
@@ -233,6 +267,84 @@ Produce the updated discovery object, merging the new information into the prior
 - Where an answer raises a new gap, add it. Answers often do.
 - Where a question went unanswered, keep it. Do not quietly drop a question because the user skipped it.
 - Do not invent progress. If the answers were thin, missingInformation should still be long.`;
+}
+
+export type PositionPromptInput = {
+  /** The discovery object, serialized deterministically. */
+  discovery: string;
+  knownCompetitors: string[];
+  /** Questions discovery left open, which the caller has chosen to proceed past. */
+  assumedQuestions: string[];
+  includeAlternatives: boolean;
+};
+
+/** The POSITION user turn. */
+export function buildPositionPrompt(input: PositionPromptInput): string {
+  const sections: string[] = [
+    `Here is the completed discovery object.
+
+<discovery>
+${input.discovery}
+</discovery>`,
+  ];
+
+  if (input.knownCompetitors.length > 0) {
+    sections.push(`Here are alternatives the user already knows about.
+
+<known_competitors>
+${input.knownCompetitors.map((name) => `- ${name}`).join('\n')}
+</known_competitors>
+
+Make the competitive angle concrete against these, rather than against a guess. Still account for the informal status quo alongside them.`);
+  } else {
+    sections.push(`No competitors were supplied. That does not mean there are none — name the realistic informal alternative people use today.`);
+  }
+
+  if (input.assumedQuestions.length > 0) {
+    sections.push(`Discovery left these questions unresolved. The user has chosen to proceed anyway.
+
+<unresolved_questions>
+${input.assumedQuestions.map((question) => `- ${question}`).join('\n')}
+</unresolved_questions>
+
+For each one, assume the most reasonable answer and say so explicitly: add an entry to assumptionsUsed naming the assumption, and a matching note in rationale. Do not proceed as though these were settled.`);
+  }
+
+  sections.push(
+    input.includeAlternatives
+      ? 'Also return alternativePositions: one or two other viable angles you considered and did not choose, each with one line on why it was passed over. There is still exactly one chosen position — these are the road not taken, recorded so the decision stays auditable.'
+      : 'Do not return alternativePositions.',
+  );
+
+  sections.push(
+    'Produce the positioning object. Fill in categoryCheck honestly — if the category name you wrote could describe unrelated products, say so and rewrite the category before returning.',
+  );
+
+  return sections.join('\n\n');
+}
+
+/**
+ * The retry turn, after the category failed its own specificity check.
+ *
+ * The rejected category and the products it could have described are quoted back,
+ * because "be more specific" on its own tends to produce a longer vague answer
+ * rather than a narrower one.
+ */
+export function buildCategoryRetryPrompt(
+  original: string,
+  rejectedCategory: string,
+  unrelatedProducts: string[],
+): string {
+  const examples =
+    unrelatedProducts.length > 0
+      ? ` You said it could also describe: ${unrelatedProducts.join('; ')}.`
+      : '';
+
+  return `${original}
+
+A previous attempt returned the category "${rejectedCategory}", which failed the specificity test.${examples}
+
+Write a category that could not describe those products. Name what the product actually is and who it is for, in the words a user would use. Do not reach for "platform", "solution", "ecosystem" or "experience" to do the work — those are the words that made the last attempt fail. Length is not specificity: a longer vague phrase is still vague.`;
 }
 
 /** The user-turn prompt: the state, then the ask. */

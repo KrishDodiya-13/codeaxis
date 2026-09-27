@@ -24,6 +24,8 @@ export {
   ConsistencySchema,
   DiscoverResultSchema,
   DiscoverySchema,
+  PositionResponseSchema,
+  PositionResultSchema,
   FinalBrandSchema,
   PositioningSchema,
   SelectedStrategySchema,
@@ -85,6 +87,31 @@ export {
   validateDiscoverRequest,
 } from './discover.ts';
 export type { DiscoverAnswers, DiscoverRequest, DiscoverResult } from './discover.ts';
+
+export {
+  DiscoveryIncompleteError,
+  PositionInputError,
+  VagueCategoryError,
+  detectsAudienceNarrowing,
+  hashDiscovery,
+  isCategoryAllFiller,
+  isDiscoveryReadyToPosition,
+  isPositioningStale,
+  position,
+  toPositionResponse,
+  toPositioningSection,
+  validatePositionRequest,
+} from './position.ts';
+export type {
+  CompetitorLookup,
+  PositionOptions,
+  PositionRequest,
+  PositionResponse,
+  PositionResult,
+} from './position.ts';
+
+export { createWebSearchCompetitorLookup, parseCompetitorList } from './competitors.ts';
+export type { WebSearchLookupOptions } from './competitors.ts';
 
 export { createDiscoverServer, listen } from './server.ts';
 export type { ServerOptions } from './server.ts';

@@ -10,6 +10,14 @@ import type { Effort } from './client.ts';
 import { DiscoverResultSchema } from './schemas.ts';
 import { discover } from './discover.ts';
 import type { DiscoverRequest } from './discover.ts';
+import {
+  DiscoveryIncompleteError,
+  PositionInputError,
+  VagueCategoryError,
+  detectsAudienceNarrowing,
+  position,
+  validatePositionRequest,
+} from './position.ts';
 import { createDiscoverServer, listen } from './server.ts';
 import { renderMarkdown } from './report.ts';
 import { MissingDependencyError, STEPS, runStep } from './steps.ts';
@@ -38,7 +46,8 @@ Usage
   brandstate rollback <section>    Discard a section and everything after it.
   brandstate diff <other.json>     Compare a saved run against another file.
   brandstate discover <idea>       Run DISCOVER alone and print the result.
-  brandstate serve                 Serve POST /api/discover.
+  brandstate position <file>       Run POSITION against a discovery JSON file.
+  brandstate serve                 Serve the DISCOVER and POSITION endpoints.
 
 Options
   --run <path>        Run file. Default: runs/brand.json
@@ -53,6 +62,9 @@ Options
   --json              For "show": print the state as JSON instead of Markdown.
   --answers <text>    For "discover": answers to a previous call's questions.
   --prior <path>      For "discover": the discovery object those answers reply to.
+  --competitors <list>  For "position": comma-separated known alternatives.
+  --force             For "position": proceed despite unresolved open questions.
+  --alternatives      For "position": also return the angles not chosen.
   --port <n>          For "serve". Default: 3000
   --host <name>       For "serve". Default: 127.0.0.1
 
@@ -286,6 +298,38 @@ async function commandDiscover(args: Args): Promise<void> {
   );
 }
 
+async function commandPosition(args: Args): Promise<void> {
+  const path = args.positionals[0];
+  if (path === undefined) {
+    fail('A discovery JSON file is required: brandstate position <discovery.json>');
+  }
+
+  const { readFile } = await import('node:fs/promises');
+  const body = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+
+  const competitors = flagString(args, 'competitors');
+  if (competitors !== undefined) {
+    body.knownCompetitors = competitors.split(',').map((name) => name.trim()).filter((name) => name !== '');
+  }
+  if (args.flags.has('force')) body.forceProceed = true;
+  if (args.flags.has('alternatives')) body.includeAlternatives = true;
+
+  const request = validatePositionRequest(body);
+  const result = await position(clientFrom(args), request);
+
+  process.stdout.write(`${stableStringify(result.value, 2)}\n`);
+
+  if (detectsAudienceNarrowing(request.discovery.targetAudience, result.value.audience)) {
+    process.stderr.write(
+      '\nThe audience was sharpened from discovery. Check that rationale accounts for the narrowing.\n',
+    );
+  }
+  const assumed = result.value.assumptionsUsed?.length ?? 0;
+  if (assumed > 0) {
+    process.stderr.write(`${assumed} discovery question${assumed === 1 ? '' : 's'} was assumed away.\n`);
+  }
+}
+
 async function commandServe(args: Args): Promise<void> {
   const portFlag = flagString(args, 'port');
   if (portFlag !== undefined && !/^\d+$/.test(portFlag)) {
@@ -299,7 +343,10 @@ async function commandServe(args: Args): Promise<void> {
   });
 
   const port = await listen(server, portFlag === undefined ? 3000 : Number(portFlag), host);
-  process.stderr.write(`Listening on http://${host}:${port}\n  POST /api/discover\n  GET  /health\n`);
+  process.stderr.write(
+    `Listening on http://${host}:${port}\n` +
+      '  POST /api/discover\n  POST /api/position\n  GET  /health\n',
+  );
 }
 
 /** Saves the run, plus the Markdown report when `--md` was passed. */
@@ -334,6 +381,7 @@ async function main(): Promise<void> {
     rollback: commandRollback,
     diff: commandDiff,
     discover: commandDiscover,
+    position: commandPosition,
     serve: commandServe,
   };
 
@@ -350,9 +398,15 @@ main().catch((error: unknown) => {
     error instanceof MissingDependencyError ||
     error instanceof SectionParseError ||
     error instanceof RefusalError ||
-    error instanceof InvalidRunFileError
+    error instanceof InvalidRunFileError ||
+    error instanceof PositionInputError ||
+    error instanceof VagueCategoryError
   ) {
     fail(error.message);
+  }
+  if (error instanceof DiscoveryIncompleteError) {
+    const questions = error.openQuestions.map((question) => `  - ${question}`).join('\n');
+    fail(`${error.message}\n\nUnresolved:\n${questions}`);
   }
   if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
     fail(`No run file found. Start one with: brandstate run "<idea>"`);

@@ -10,6 +10,15 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { BrandClient, RefusalError, SectionParseError } from './client.ts';
 import type { BrandClientOptions, SectionDeriver } from './client.ts';
 import { DiscoverInputError, discover, validateDiscoverRequest } from './discover.ts';
+import {
+  DiscoveryIncompleteError,
+  PositionInputError,
+  VagueCategoryError,
+  detectsAudienceNarrowing,
+  position,
+  validatePositionRequest,
+} from './position.ts';
+import type { PositionOptions } from './position.ts';
 
 /** Requests larger than this are rejected rather than buffered. */
 const MAX_BODY_BYTES = 1_000_000;
@@ -19,15 +28,20 @@ export type ServerOptions = {
   deriver?: SectionDeriver;
   /** Log lines for each request. Defaults to writing to stderr. */
   log?: (message: string) => void;
+  /**
+   * Options for POSITION, including the optional competitor lookup. Omitted
+   * entirely, POSITION does no external lookups — which is the supported default.
+   */
+  position?: PositionOptions;
 } & BrandClientOptions;
 
 export function createDiscoverServer(options: ServerOptions = {}): Server {
-  const { deriver: injected, log, model, effort, maxTokens, client } = options;
+  const { deriver: injected, log, position: positionOptions = {}, model, effort, maxTokens, client } = options;
   const deriver = injected ?? new BrandClient({ model, effort, maxTokens, client });
   const write = log ?? ((message: string) => process.stderr.write(`${message}\n`));
 
   return createServer((request, response) => {
-    handle(request, response, deriver, write).catch((error: unknown) => {
+    handle(request, response, deriver, write, positionOptions).catch((error: unknown) => {
       // The handler deals with expected failures itself; reaching here means a
       // bug, so log it and return a generic 500 rather than leaking internals.
       write(`unhandled error: ${String(error)}`);
@@ -42,6 +56,7 @@ async function handle(
   response: ServerResponse,
   deriver: SectionDeriver,
   log: (message: string) => void,
+  positionOptions: PositionOptions,
 ): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://localhost');
   const route = `${request.method} ${url.pathname}`;
@@ -64,14 +79,16 @@ async function handle(
     return;
   }
 
-  if (url.pathname !== '/api/discover') {
-    sendJson(response, 404, { error: `No route for ${url.pathname}. The endpoint is POST /api/discover.` });
+  if (url.pathname !== '/api/discover' && url.pathname !== '/api/position') {
+    sendJson(response, 404, {
+      error: `No route for ${url.pathname}. The endpoints are POST /api/discover and POST /api/position.`,
+    });
     return;
   }
 
   if (request.method !== 'POST') {
     response.setHeader('Allow', 'POST, OPTIONS');
-    sendJson(response, 405, { error: 'POST /api/discover. Other methods are not supported.' });
+    sendJson(response, 405, { error: `POST ${url.pathname}. Other methods are not supported.` });
     return;
   }
 
@@ -101,22 +118,61 @@ async function handle(
 
   const startedAt = Date.now();
   try {
-    const discoverRequest = validateDiscoverRequest(parsed);
-    const result = await discover(deriver, discoverRequest);
+    if (url.pathname === '/api/discover') {
+      const result = await discover(deriver, validateDiscoverRequest(parsed));
+
+      log(
+        `${route} 200 ${Date.now() - startedAt}ms ` +
+          `gaps=${result.value.missingInformation.length} ` +
+          `tokens=${result.usage.inputTokens}/${result.usage.outputTokens}`,
+      );
+
+      // The body is exactly the discovery object, as the spec defines it. A
+      // caller decides sufficiency with `missingInformation.length === 0`.
+      sendJson(response, 200, result.value);
+      return;
+    }
+
+    const positionRequest = validatePositionRequest(parsed);
+    const result = await position(deriver, positionRequest, positionOptions);
+
+    const narrowed = detectsAudienceNarrowing(
+      positionRequest.discovery.targetAudience,
+      result.value.audience,
+    );
 
     log(
       `${route} 200 ${Date.now() - startedAt}ms ` +
-        `gaps=${result.value.missingInformation.length} ` +
+        `category="${result.value.category}" ` +
+        `narrowed=${narrowed} ` +
+        `assumed=${result.value.assumptionsUsed?.length ?? 0} ` +
         `tokens=${result.usage.inputTokens}/${result.usage.outputTokens}`,
     );
 
-    // The body is exactly the discovery object, as the spec defines it. A caller
-    // decides sufficiency with `missingInformation.length === 0`.
     sendJson(response, 200, result.value);
   } catch (error) {
-    if (error instanceof DiscoverInputError) {
+    if (error instanceof DiscoverInputError || error instanceof PositionInputError) {
       log(`${route} 400 ${error.message}`);
       sendJson(response, 400, { error: error.message });
+      return;
+    }
+    if (error instanceof DiscoveryIncompleteError) {
+      // Not a malformed request — a request made too early. The unresolved
+      // questions go back so the caller can put them to the user.
+      log(`${route} 422 ${error.openQuestions.length} open questions`);
+      sendJson(response, 422, {
+        error: error.message,
+        openQuestions: error.openQuestions,
+      });
+      return;
+    }
+    if (error instanceof VagueCategoryError) {
+      log(`${route} 502 vague category "${error.category}"`);
+      sendJson(response, 502, {
+        error: error.message,
+        category: error.category,
+        couldAlsoDescribe: error.unrelatedProducts,
+      });
       return;
     }
     if (error instanceof RefusalError || error instanceof SectionParseError) {

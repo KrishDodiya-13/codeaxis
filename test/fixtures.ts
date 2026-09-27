@@ -7,6 +7,8 @@
  */
 import type { DeriveOptions, SectionDeriver, Usage } from '../src/client.ts';
 import type { DiscoverResult } from '../src/discover.ts';
+import { hashDiscovery } from '../src/position.ts';
+import type { PositionResult } from '../src/position.ts';
 import type {
   BrandState,
   BrandStateSection,
@@ -94,12 +96,37 @@ export const specWorkedExample: DiscoverResult = {
   ],
 };
 
+/**
+ * The POSITION response, as the endpoint returns it.
+ *
+ * Built so `toPositioningSection` maps it onto `positioning` below, and with a
+ * passing `categoryCheck` so the specificity retry loop is not triggered.
+ */
+export const positionResult: PositionResult = {
+  category: 'Productisation tool for service agencies',
+  audience: 'Owners of 5-to-20-person service agencies who have abandoned one attempt at packaging an offer',
+  problem: 'Agency owners sell their own time and cannot step away without revenue stopping.',
+  valueProposition:
+    'Reads an agency delivery record, finds the work already repeated, and turns it into an offer someone other than the owner can run.',
+  differentiator: 'Built from the delivery record rather than from a blank template.',
+  competitiveAngle: 'Incumbents sell planning documents; the plan is not where agencies fail, delivery is.',
+  rationale: [
+    'Discovery put the failure at execution, not intent',
+    'The audience has abandoned one attempt already',
+  ],
+  categoryCheck: { unrelatedProducts: [], couldDescribeUnrelatedProducts: false },
+};
+
 const positioning: Positioning = {
-  category: 'Productisation infrastructure for service businesses',
+  category: 'Productisation tool for service agencies',
   valueProposition: 'Turn the work you already repeat into an offer someone else can deliver.',
   differentiator: 'Built from the delivery record rather than from a blank template.',
   competitiveAngle: 'Incumbents sell planning documents; the plan is not where agencies fail, delivery is.',
-  rationale: ['Discovery put the failure at execution, not intent', 'The audience has abandoned one attempt already'],
+  rationale: [
+    'Discovery put the failure at execution, not intent',
+    'The audience has abandoned one attempt already',
+  ],
+  sourceDiscoveryHash: hashDiscovery(discovery),
 };
 
 const shape: Shape = {
@@ -256,7 +283,9 @@ export class StubDeriver implements SectionDeriver {
         ? { stressTests: sectionFixtures.stressTests }
         : section === 'discovery'
           ? discoverResult
-          : sectionFixtures[section];
+          : section === 'positioning'
+            ? positionResult
+            : sectionFixtures[section];
 
     // Parsing through the real schema keeps the fixtures honest: a fixture that
     // drifts out of schema fails the test rather than silently passing.
