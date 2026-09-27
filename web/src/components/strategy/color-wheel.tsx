@@ -126,6 +126,9 @@ export default function ColorWheel({
             role="slider"
             tabIndex={0}
             aria-label="Hue and saturation. Left and right change the hue, up and down the saturation."
+            aria-valuemin={0}
+            aria-valuemax={360}
+            aria-valuenow={Math.round(hsl.h)}
             aria-valuetext={`Hue ${Math.round(hsl.h)} degrees, saturation ${Math.round(hsl.s)} percent`}
             onPointerDown={(e) => {
               dragging.current = true
