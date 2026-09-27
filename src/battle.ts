@@ -89,6 +89,8 @@ export class IndistinctStrategiesError extends Error {
 export type DistinctnessThresholds = {
   /** `uniqueClaim` overlap above this means the same bet twice. */
   claim: number;
+  /** `coreIdea` overlap above this means the same strategic logic twice. */
+  coreIdea: number;
   /** `primarySegment` overlap above this means the same slice of the audience. */
   segment: number;
   /** `risks` overlap above this means the same failure mode. */
@@ -99,6 +101,7 @@ export type DistinctnessThresholds = {
 
 export const DEFAULT_THRESHOLDS: DistinctnessThresholds = {
   claim: 0.5,
+  coreIdea: 0.5,
   segment: 0.6,
   risks: 0.5,
   maxPositioningSentences: 4,
@@ -228,6 +231,14 @@ export function findDistinctnessIssues(
       });
     }
 
+    if (strategy.tradeoffs.every((tradeoff) => tradeoff.trim() === '')) {
+      flag({
+        direction: strategy.direction,
+        instruction:
+          'It listed no tradeoff. Say what this direction gives up even when it works — the audience it will not serve, the claim it cannot make. A direction with no cost has not been chosen, only described.',
+      });
+    }
+
     if (countSentences(strategy.positioning) > thresholds.maxPositioningSentences) {
       flag({
         direction: strategy.direction,
@@ -257,6 +268,21 @@ export function findDistinctnessIssues(
             `Its differentiation is functionally identical to ${earlier.direction}'s — both come down to "${earlier.uniqueClaim}". ` +
             `Rebuild it around what ${ARCHETYPES[strategy.direction as Direction]?.coreAppeal ?? 'its own direction'} ` +
             `actually offers here, on a genuinely different axis.`,
+        });
+        continue;
+      }
+
+      // The directions must differ in strategic logic, not only in wording, so the
+      // stated bet is compared before anything else about how it reads.
+      if (overlapRatio(strategy.coreIdea, earlier.coreIdea) > thresholds.coreIdea) {
+        flag({
+          direction: strategy.direction,
+          collidedWith: earlier.direction,
+          instruction:
+            `Its core idea is the same bet as ${earlier.direction}'s ("${earlier.coreIdea}"). ` +
+            'Two directions that believe the same thing about the customer are one direction written twice. ' +
+            `Find what ${ARCHETYPES[strategy.direction as Direction]?.coreAppeal ?? 'this direction'} ` +
+            'believes that the other does not.',
         });
         continue;
       }

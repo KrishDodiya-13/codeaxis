@@ -73,6 +73,7 @@ export function createInitialState(project: Project): BrandState {
       differentiator: '',
       competitiveAngle: '',
       rationale: [],
+      assumptions: [],
     },
     strategyOptions: [],
     personality: { traits: [], antiTraits: [], values: [], rationale: [] },

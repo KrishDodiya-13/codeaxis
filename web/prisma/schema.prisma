@@ -1,0 +1,59 @@
+// BRANDOS persistence.
+//
+// Deliberately small. The AI structures change fast, so each stage's output is stored
+// as JSONB and validated by Zod on the way in and out rather than normalised into
+// columns — per the architecture note that JSON/JSONB is intentional here. The one
+// thing that is a real column is anything a query needs to filter or order on.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  DISCOVERY
+  POSITIONING
+  STRATEGY
+  STRESS_TEST
+  COMPLETE
+}
+
+model Project {
+  id           String        @id @default(uuid())
+  name         String
+  originalIdea String        @map("original_idea")
+  productType  String?       @map("product_type")
+  goal         String?
+  status       ProjectStatus @default(DISCOVERY)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  brandState BrandStateRecord?
+
+  @@map("projects")
+}
+
+/// The whole BrandState for a project, as one JSON document.
+///
+/// One row per project rather than one row per stage: every stage reads the whole
+/// state and writes one section of it, so splitting it would mean reassembling it on
+/// every call and would let the sections drift out of step with each other.
+model BrandStateRecord {
+  id        String   @id @default(uuid())
+  projectId String   @unique @map("project_id")
+  /// A full BrandState, validated against BrandStateFileSchema on read and write.
+  state     Json
+  /// Denormalised from state.schemaVersion so a migration sweep can find old rows
+  /// without parsing every document.
+  schemaVersion String @map("schema_version")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("brand_states")
+}

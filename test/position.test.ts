@@ -390,12 +390,16 @@ describe('toPositionResponse', () => {
 
   it('keeps the documented fields', () => {
     assert.deepEqual(Object.keys(toPositionResponse(positionResult)).sort(), [
+      'assumptions',
       'audience',
       'category',
       'competitiveAngle',
+      'confidence',
       'differentiator',
+      'positioning',
       'problem',
       'rationale',
+      'userNeed',
       'valueProposition',
     ]);
   });
@@ -420,6 +424,7 @@ describe('toPositioningSection', () => {
     const asRecord = section as Record<string, unknown>;
     assert.equal(asRecord.audience, undefined);
     assert.equal(asRecord.problem, undefined);
+    assert.equal(asRecord.userNeed, undefined);
   });
 
   it('does not carry the API-only fields into the state', () => {
@@ -573,8 +578,10 @@ describe('the pipeline positioning step', () => {
     const result = await runStep(new StubDeriver(), completeState(), 'positioning');
 
     assert.deepEqual(Object.keys(result.state.positioning).sort(), [
+      'assumptions',
       'category',
       'competitiveAngle',
+      'confidence',
       'differentiator',
       'rationale',
       'sourceDiscoveryHash',

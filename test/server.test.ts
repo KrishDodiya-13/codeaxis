@@ -219,12 +219,16 @@ describe('POST /api/position', () => {
 
     assert.equal(json.categoryCheck, undefined);
     assert.deepEqual(Object.keys(json).sort(), [
+      'assumptions',
       'audience',
       'category',
       'competitiveAngle',
+      'confidence',
       'differentiator',
+      'positioning',
       'problem',
       'rationale',
+      'userNeed',
       'valueProposition',
     ]);
   });
@@ -317,12 +321,15 @@ describe('POST /api/battle', () => {
 
     assert.deepEqual(Object.keys(json[0]).sort(), [
       'audienceFit',
+      'coreIdea',
       'differentiation',
       'direction',
+      'name',
       'positioning',
       'rationale',
       'risks',
       'strengths',
+      'tradeoffs',
     ]);
   });
 

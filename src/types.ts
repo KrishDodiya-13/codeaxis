@@ -39,6 +39,15 @@ export type Positioning = {
   differentiator: string;
   competitiveAngle: string;
   rationale: string[];
+  /** What this positioning rests on that the user did not state. */
+  assumptions: string[];
+  /**
+   * How much to trust this positioning.
+   *
+   * Optional because a state written before schema 1.1.0 never recorded one, and
+   * defaulting it would invent a confidence nobody assessed.
+   */
+  confidence?: Confidence;
   /**
    * The discovery object this was derived from, as a hash.
    *
@@ -135,11 +144,26 @@ export type VisualDirection = {
 export type StrategyOption = {
   /** The archetype this strategy is built around, e.g. `CONNECTION`. */
   direction: Direction;
+  /**
+   * A short title for the direction, e.g. "The Verified Insider".
+   *
+   * Names the strategy, not the product — brand naming is a later stage and a
+   * separate decision.
+   */
+  name: string;
+  /** The strategic bet in one sentence: what this direction believes that the others do not. */
+  coreIdea: string;
   /** This strategy's positioning statement, two or three sentences. */
   positioning: string;
   strengths: string[];
   /** Never empty: a direction with no stated risk has not been thought through. */
   risks: string[];
+  /**
+   * What choosing this gives up even when it works.
+   *
+   * Distinct from `risks`, which is what might go wrong.
+   */
+  tradeoffs: string[];
   /** Who this resonates with most, and who it resonates with less. */
   audienceFit: string;
   /** How this stands apart, seen through this direction specifically. */
@@ -177,6 +201,9 @@ export const TEST_TYPES = [
 ] as const;
 
 export type TestType = (typeof TEST_TYPES)[number];
+
+/** How much to trust a generated decision. */
+export type Confidence = 'low' | 'medium' | 'high';
 
 /** How serious a finding is. `critical` means unusable as-is. */
 export type Severity = 'low' | 'medium' | 'high' | 'critical';

@@ -118,6 +118,7 @@ export function migrateState(value: unknown): MigrationResult {
   }
 
   const consistency = migrateConsistency(input.consistency, notes);
+  const positioning = migratePositioning(input.positioning, notes);
 
   const state = {
     id: typeof input.id === 'string' ? input.id : randomUUID(),
@@ -127,7 +128,7 @@ export function migrateState(value: unknown): MigrationResult {
 
     project: input.project ?? { idea: '' },
     discovery: input.discovery,
-    positioning: input.positioning,
+    positioning,
     strategyOptions: Array.isArray(input.strategyOptions) ? input.strategyOptions : [],
     ...(input.selectedStrategy === undefined ? {} : { selectedStrategy: input.selectedStrategy }),
     personality,
@@ -143,6 +144,26 @@ export function migrateState(value: unknown): MigrationResult {
   if (from === 'pre-1.0.0') notes.push(`schemaVersion set to ${SCHEMA_VERSION}`);
 
   return { state, from, notes };
+}
+
+/**
+ * Schema 1.1.0 added `assumptions` and `confidence` to positioning.
+ *
+ * `assumptions` becomes an empty list, which is honest — the older version recorded
+ * none. `confidence` is left absent rather than defaulted, because a confidence nobody
+ * assessed is exactly the kind of invented certainty the pipeline exists to avoid.
+ */
+function migratePositioning(value: unknown, notes: string[]): unknown {
+  if (value === null || value === undefined || typeof value !== 'object') return value;
+
+  const old = value as Record<string, unknown>;
+  if (Array.isArray(old.assumptions)) return old;
+
+  notes.push(
+    'positioning.assumptions added as an empty list, and confidence left unset — ' +
+      'schema 1.1.0 records both, and the stored state predates them',
+  );
+  return { ...old, assumptions: [] };
 }
 
 /**

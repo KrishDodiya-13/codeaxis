@@ -19,7 +19,7 @@ import { TEST_TYPES } from './types.ts';
  * stored object built against an older version needs `migrateState` before it can be
  * read. See the changelog in docs/brand-dna-contract.md.
  */
-export const SCHEMA_VERSION = '1.0.0';
+export const SCHEMA_VERSION = '1.1.0';
 import type { BrandState, BrandStateSection } from './types.ts';
 
 /**
@@ -128,6 +128,19 @@ export const PositioningSchema = strictObject({
   differentiator: text('The one thing true of this brand and not of its competitors.'),
   competitiveAngle: text('How the brand attacks the position held by incumbents.'),
   rationale: z.array(text()).min(1).describe('Why this positioning follows from the discovery work.'),
+  assumptions: z
+    .array(text())
+    .describe('What this positioning rests on that the user did not state.'),
+  /**
+   * How much to trust this positioning.
+   *
+   * Optional because a state written before schema 1.1.0 never recorded one, and
+   * defaulting it would be inventing a confidence nobody assessed.
+   */
+  confidence: z
+    .enum(['low', 'medium', 'high'])
+    .describe('Set from the POSITION response, not by the model writing this section.')
+    .optional(),
   /**
    * The discovery object this positioning was derived from, as a hash.
    *
@@ -166,6 +179,12 @@ export const PositionResponseSchema = strictObject({
   problem: text(
     'The problem from discovery, echoed so this object is self-contained. Do not rewrite it. If positioning reveals the problem needs restating, say so in rationale — that is a signal to loop back to discovery, not to redefine it here.',
   ),
+  userNeed: text(
+    'The underlying need from discovery, echoed. The problem is the situational pain; this is why anyone cares. Carry it across rather than restating the problem in other words.',
+  ),
+  positioning: text(
+    'The positioning statement in one sentence someone could repeat from memory: for whom, in what category, what value, versus what alternative. Distinct from valueProposition, which is only the value claim.',
+  ),
   valueProposition: text(
     'One sentence: what this delivers, and to whom. A plain, testable claim that could be argued true or false — not a tagline or a slogan.',
   ),
@@ -187,10 +206,20 @@ export const PositionResponseSchema = strictObject({
     .array(AlternativePositionSchema)
     .describe('Other viable angles considered and passed over. Only when asked for.')
     .optional(),
+  assumptions: z
+    .array(text())
+    .describe(
+      'Everything this positioning rests on that the user did not actually state. Each entry names the assumption plainly, so a reader can see which parts would move if it turned out wrong. An empty array is valid only if nothing was inferred, which is rare.',
+    ),
+  confidence: z
+    .enum(['low', 'medium', 'high'])
+    .describe(
+      'How much to trust this positioning. high = it follows from stated facts with little inference. medium = it rests on reasonable inference. low = discovery was thin, or it rests on assumptions that could easily be wrong. Rate it honestly: a confident-looking position built on guesses is worse than an openly uncertain one. The reason belongs in rationale.',
+    ),
   assumptionsUsed: z
     .array(text())
     .describe(
-      'Only when discovery had unresolved questions and you were told to proceed anyway: one entry per question you had to assume an answer to, naming the assumption.',
+      'The narrower list: only when discovery had unresolved questions and you were told to proceed anyway, one entry per question you had to assume an answer to. These also belong in assumptions.',
     )
     .optional(),
 });
@@ -327,6 +356,12 @@ export const StrategyOptionSchema = strictObject({
   direction: z
     .enum(DIRECTIONS)
     .describe('The archetype this strategy is built around. Use the one you were assigned.'),
+  name: text(
+    'A short title for this direction, three to five words, e.g. "The Verified Insider" or "Ship Before The Deadline". This names the STRATEGY, not the product — do not propose a brand name here, that is a later stage and a different decision.',
+  ),
+  coreIdea: text(
+    'The strategic bet in one sentence: what this direction believes about the customer that the other directions do not. Not a summary of the positioning, and not a benefit statement — the belief the whole direction rests on.',
+  ),
   positioning: text(
     'This strategy version of the positioning statement, in two or three sentences. Same problem and audience, framed through this direction. Do not reuse another strategy wording.',
   ),
@@ -348,11 +383,17 @@ export const StrategyOptionSchema = strictObject({
   differentiation: text(
     'How this strategy stands apart from competitors and alternatives, seen through this direction specifically.',
   ),
+  tradeoffs: z
+    .array(text())
+    .min(1)
+    .describe(
+      'What choosing this direction gives up. Distinct from risks: a risk is what might go wrong, a tradeoff is what you are knowingly sacrificing even when it goes right — an audience you will not reach, a claim you cannot make, a speed you forgo. Every real strategic choice costs something certain.',
+    ),
   rationale: z
     .array(text())
     .min(1)
     .describe(
-      'Why this direction is a credible fit for this input. Each line must reference something specific in discovery or positioning.',
+      'Why this direction is a credible fit for this input. Each line must reference something specific in discovery or positioning. Do not cite a market fact, a competitor or a statistic that is not already in the input.',
     ),
 });
 
@@ -591,14 +632,19 @@ export const BrandStateFileSchema = strictObject({
     differentiator: looseText,
     competitiveAngle: looseText,
     rationale: looseList,
+    assumptions: looseList,
+    confidence: looseText.optional(),
     sourceDiscoveryHash: looseText.optional(),
   }),
   strategyOptions: z.array(
     strictObject({
       direction: looseText,
+      name: looseText,
+      coreIdea: looseText,
       positioning: looseText,
       strengths: looseList,
       risks: looseList,
+      tradeoffs: looseList,
       audienceFit: looseText,
       differentiation: looseText,
       rationale: looseList,

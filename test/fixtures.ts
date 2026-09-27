@@ -115,6 +115,9 @@ export const positionResult: PositionResult = {
   category: 'Productisation tool for service agencies',
   audience: 'Owners of 5-to-20-person service agencies who have abandoned one attempt at packaging an offer',
   problem: 'Agency owners sell their own time and cannot step away without revenue stopping.',
+  userNeed: 'To stop being the bottleneck in their own delivery.',
+  positioning:
+    'For owners of small service agencies who have already tried packaging an offer, Throughline is a productisation tool that builds the offer from their delivery record rather than from a blank template.',
   valueProposition:
     'Reads an agency delivery record, finds the work already repeated, and turns it into an offer someone other than the owner can run.',
   differentiator: 'Built from the delivery record rather than from a blank template.',
@@ -122,7 +125,12 @@ export const positionResult: PositionResult = {
   rationale: [
     'Discovery put the failure at execution, not intent',
     'The audience has abandoned one attempt already',
+    'Confidence is medium: the audience was stated, but the alternative people use today was inferred',
   ],
+  assumptions: [
+    'Owners currently improvise with documents and habit rather than a named competitor, which discovery implied but did not state',
+  ],
+  confidence: 'medium',
   categoryCheck: { unrelatedProducts: [], couldDescribeUnrelatedProducts: false },
 };
 
@@ -135,6 +143,10 @@ const positioning: Positioning = {
     'Discovery put the failure at execution, not intent',
     'The audience has abandoned one attempt already',
   ],
+  assumptions: [
+    'Owners currently improvise with documents and habit rather than a named competitor',
+  ],
+  confidence: 'medium',
   sourceDiscoveryHash: hashDiscovery(discovery),
 };
 
@@ -214,6 +226,12 @@ const visualDirection: VisualDirection = {
 export const strategyCandidates: StrategyCandidate[] = [
   {
     direction: 'CONNECTION',
+    name: 'The Operator Network',
+    coreIdea:
+      'Owners stall on delegation because they have nobody to hand the work to, not because the process is unwritten.',
+    tradeoffs: [
+      'Gives up being useful on day one to a solo owner with nobody to delegate to yet',
+    ],
     positioning:
       'The place agency owners find the operators who can run the work without them. Productising is a people problem before it is a process problem.',
     strengths: ['Addresses the reason past attempts were abandoned: nobody to hand the work to'],
@@ -228,6 +246,12 @@ export const strategyCandidates: StrategyCandidate[] = [
   },
   {
     direction: 'COMPETITION',
+    name: 'Outgrow The Hour',
+    coreIdea:
+      'Owners move when they see a peer pulling ahead, not when they are told productising is sensible.',
+    tradeoffs: [
+      'Gives up the owner who chose small deliberately, which is a large share of the market',
+    ],
     positioning:
       'Agencies that productise outgrow the ones that do not. Turn your delivery record into an offer that compounds while your competitors keep selling hours.',
     strengths: ['Appeals to owners benchmarking themselves against faster-growing peers'],
@@ -241,6 +265,12 @@ export const strategyCandidates: StrategyCandidate[] = [
   },
   {
     direction: 'TRUST',
+    name: 'Nothing Invented',
+    coreIdea:
+      'Owners who abandoned one attempt will only try again if the output is evidently theirs rather than a template.',
+    tradeoffs: [
+      'Gives up any claim to ambition or upside, which is what a growth-minded buyer wants to hear',
+    ],
     positioning:
       'Your delivery record already contains the answer, so nothing here is invented. Every offer is built from work you have shipped and can stand behind.',
     strengths: ['Removes the leap of faith that made the abandoned first attempt feel risky'],

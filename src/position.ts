@@ -236,9 +236,11 @@ export function toPositionResponse(result: PositionResult): PositionResponse {
 /**
  * Maps a POSITION result onto `BrandState.positioning`.
  *
- * `audience` and `problem` are dropped: they are echoed in the API response for
- * traceability, but `discovery` stays the single source of truth for both, and
- * duplicating them into the state would create a second copy to drift.
+
+ * `audience`, `problem` and `userNeed` are dropped: they are echoed in the API
+ * response for traceability, but `discovery` stays the single source of truth for all
+ * three, and duplicating them into the state would create a second copy to drift.
+ * `assumptions` and `confidence` are kept, because those are positioning's own.
  * `assumptionsUsed` is dropped too — the state carries those as rationale notes,
  * which is where the model was told to put them.
  */
@@ -252,6 +254,8 @@ export function toPositioningSection(
     differentiator: response.differentiator,
     competitiveAngle: response.competitiveAngle,
     rationale: [...response.rationale],
+    assumptions: [...response.assumptions],
+    confidence: response.confidence,
     sourceDiscoveryHash: hashDiscovery(discovery),
   };
 }

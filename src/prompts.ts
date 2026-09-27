@@ -125,7 +125,16 @@ This is the first step that makes a real strategic claim rather than organizing 
 2. **The competitive angle must include the status quo.** Most early-stage ideas are not competing with another app. They are competing with a spreadsheet, a group chat, word of mouth, or doing nothing at all. If no competitors were given to you, name the realistic informal alternative. Never write that there are no direct competitors — the status quo is always the incumbent.
 3. **The rationale must cite discovery concretely.** "This audience is exciting and underserved" is not a rationale. Every line must say why, tied to something specific in the discovery input — a goal, a constraint, the stated need, an assumption. A reviewer should be able to check each line against discovery and agree or disagree.
 4. **The value proposition is a claim, not a tagline.** It should read like something that could be argued true or false. If it sounds good on a billboard, it is the wrong field — naming and taglines belong to a later step.
+4b. **positioning and valueProposition are different fields.** The value proposition is the value claim alone. The positioning statement is the whole position in one memorable sentence: for whom, in what category, what value, against what alternative. Do not write the same sentence twice.
 5. **One position, clearly reasoned.** Commit to a single coherent positioning. Do not hedge across two.
+
+## Assumptions and confidence
+
+Discovery separates what the user told you from what was inferred. Carry that discipline forward.
+
+**assumptions** lists everything this positioning rests on that the user did not actually state — the audience you narrowed to, the alternative you assumed people use today, the constraint you read between the lines. Name each one plainly. This is not a hedge; it is what lets a reader see which parts of the position would move if a guess turned out wrong. Returning an empty list means you inferred nothing, which is rare and usually means you did not look.
+
+**confidence** is your honest read on the whole position: high when it follows from stated facts with little inference, medium when it rests on reasonable inference, low when discovery was thin or the position leans on assumptions that could easily be wrong. Say why in rationale. A confident-looking position built on guesses is worse than an openly uncertain one — the user can act on uncertainty, but not on false certainty.
 
 ## Narrowing the audience
 
@@ -133,7 +142,7 @@ Positioning often narrows the audience discovery gave you — "students" becomin
 
 ## Do not rewrite the problem
 
-The problem field is echoed from discovery so this object can be audited on its own. Carry it across. If positioning makes you think the problem is stated wrongly, say so in rationale — that is a signal to go back to discovery, not licence to redefine the problem here.
+The problem and userNeed fields are echoed from discovery so this object can be audited on its own. Carry both across; the problem is the situational pain, the need is why anyone cares, and restating one as the other loses what positioning needs. If positioning makes you think the problem is stated wrongly, say so in rationale — that is a signal to go back to discovery, not licence to redefine the problem here.
 
 ## Out of scope
 
@@ -158,16 +167,30 @@ Different tone is not different strategy. Three strategies are meaningfully diff
 
 Test each pair before you return them: could the same customer pick either one for the same reason? If yes, one of them has to change.
 
+## Never invent evidence
+
+You have no market research and no competitor list beyond what the input gives you. So:
+
+- Do not name a competitor that is not in the input. If you need to talk about the alternative people use today, describe the *kind* of thing — a group chat, a spreadsheet, doing nothing — which is an observation about behaviour, not a claim about a company.
+- Do not cite a market size, a growth rate, a percentage, a funding round or a trend. Not "the market is shifting toward X", not "most teams now do Y". You do not know that.
+- Do not claim what competitors do or do not offer. "Unlike incumbents, who all ignore X" is a fact you do not have. Say what this direction offers and let the comparison rest on the alternative described in the input.
+- Where a direction depends on something you are assuming about the market, say so in the tradeoffs or the rationale as an assumption, in plain words.
+
+A direction built on an invented fact is worse than a cautious one, because nobody downstream can tell which parts were real.
+
 ## What must stay the same
 
 All of them are about the same product, for the same audience, solving the same problem. This is not inventing several different products. The discovery input — and the positioning, if you were given one — is the fixed ground. Each strategy interprets that ground through its direction's lens; none of them redefines it.
 
 ## Per strategy
 
+- **name**: a short title for the direction, three to five words, so a human can refer to it in conversation. This names the strategy, not the product — do not propose a brand name, which is a later stage and a different decision.
+- **coreIdea**: the bet in one sentence. What does this direction believe about the customer that the other two do not? If two of your coreIdeas could be swapped without changing anything, you have one idea written twice.
 - **positioning**: two or three sentences, framed through this direction. Short. This is a comparison document, not a brand brief — depth comes later, for whichever direction wins.
 - **strengths**: what this direction genuinely has going for it *here*. "Builds community" is not a strength, it is the archetype restated. Tie it to something in discovery.
 - **risks**: at least one substantial risk, and mean it. Every strategic bet costs something — narrower audience, slower proof, thinner launch, harder story. A direction you list no real risk for is a direction you have not examined, and an empty risk list is a failure, not a clean bill of health.
 - **audienceFit**: who this resonates with most *and who it resonates with less*. Name both. A direction that appeals to everyone equally is not a direction. Different strategies should genuinely suit somewhat different slices of the audience — that is part of what makes them different at all.
+- **tradeoffs**: what choosing this gives up *even when it works*. A risk is what might go wrong; a tradeoff is the certain cost — the audience you will not serve, the claim you cannot make, the speed you forgo. A direction with no tradeoff is a direction that has not been chosen, only described.
 - **differentiation**: how this stands apart from the alternatives, through this direction specifically. Two strategies must not come down to the same underlying claim in different clothes.
 - **rationale**: why this direction is credible for *this* input, citing discovery or positioning concretely.
 
