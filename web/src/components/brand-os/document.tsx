@@ -7,6 +7,7 @@ import HoverLetters from '@/components/hover-letters'
 import { SPRING, Stamp, Swash } from '@/components/strategy/ui'
 import { TEST_META } from '@/lib/stress'
 import { cn } from '@/lib/utils'
+import { humanize } from '@/lib/humanize'
 
 /* ------------------------------------------------------------------------------------ */
 /* Small pieces                                                                         */
@@ -489,13 +490,13 @@ export default function BrandOsDocument({ os, compiledAt, projectName }: { os: B
             </div>
             <ul className="grid gap-2 sm:grid-cols-2">
               {val.readiness.checklist.map((c) => (
-                <li key={c.item} title={c.detail} className="flex gap-2 rounded-2xl border-2 border-poster-ink/10 bg-white px-4 py-3 text-sm font-semibold transition-[border-color] duration-300 hover:border-poster-ink">
+                <li key={c.item} title={humanize(c.detail)} className="flex gap-2 rounded-2xl border-2 border-poster-ink/10 bg-white px-4 py-3 text-sm font-semibold transition-[border-color] duration-300 hover:border-poster-ink">
                   <span aria-hidden="true" className={cn('grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-extrabold', c.passed ? 'bg-poster-green ring-1 ring-poster-ink' : 'bg-[#e5484d] text-white')}>
                     {c.passed ? '✓' : '✗'}
                   </span>
                   <span>
                     <span className="font-extrabold">{c.item}</span>
-                    <span className="block text-xs text-poster-ink/55">{c.detail}</span>
+                    <span className="block text-xs text-poster-ink/55">{humanize(c.detail)}</span>
                   </span>
                 </li>
               ))}
@@ -527,7 +528,7 @@ export default function BrandOsDocument({ os, compiledAt, projectName }: { os: B
                           {TEST_META[f.type].glyph} {TEST_META[f.type].label}
                         </td>
                         <td className="px-4 py-3 font-bold capitalize">{f.severity}</td>
-                        <td className="px-4 py-3 font-semibold leading-snug">{f.issue}</td>
+                        <td className="px-4 py-3 font-semibold leading-snug">{humanize(f.issue)}</td>
                         <td className="px-4 py-3">
                           <span className={cn('rounded-full border-2 px-2.5 py-0.5 text-[11px] font-extrabold uppercase', st.className)}>{st.label}</span>
                         </td>
@@ -556,7 +557,7 @@ export default function BrandOsDocument({ os, compiledAt, projectName }: { os: B
                 <p className="text-xs font-extrabold uppercase tracking-wide">⚠ Remaining risks</p>
                 <ul className="mt-3 space-y-2">
                   {(val.remainingRisks.length ? val.remainingRisks : ['None recorded.']).map((r) => (
-                    <li key={r} className="text-sm font-semibold leading-snug">{r}</li>
+                    <li key={r} className="text-sm font-semibold leading-snug">{humanize(r)}</li>
                   ))}
                 </ul>
               </div>
@@ -564,7 +565,7 @@ export default function BrandOsDocument({ os, compiledAt, projectName }: { os: B
                 <p className="text-xs font-extrabold uppercase tracking-wide">→ Recommendations</p>
                 <ul className="mt-3 space-y-2">
                   {(val.recommendations.length ? val.recommendations : ['None recorded.']).map((r) => (
-                    <li key={r} className="text-sm font-semibold leading-snug">{r}</li>
+                    <li key={r} className="text-sm font-semibold leading-snug">{humanize(r)}</li>
                   ))}
                 </ul>
               </div>

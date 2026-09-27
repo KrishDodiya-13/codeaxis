@@ -2,6 +2,7 @@ import type { BrandState, Confidence } from 'brandstate'
 import { STAGE_LABELS, selectedOption, type StrategyWorkspace, type TabKey } from '@/lib/strategy'
 import { FieldLabel, Panel } from '@/components/project/panel'
 import { cn } from '@/lib/utils'
+import { humanize } from '@/lib/humanize'
 import { ConfidenceTag, DotList } from './ui'
 
 interface Reasoning {
@@ -49,7 +50,7 @@ function reasoningFor(tab: TabKey, state: BrandState | null, ws: StrategyWorkspa
             summary: `You chose “${option.name}”.`,
             points: option.rationale,
             sources: ['Discovery state', 'Positioning', `Your choice · ${option.name}`],
-            flags: [...option.risks.map((r) => `Risk: ${r}`), ...staleFlags],
+            flags: [...option.risks.map((r) => `Risk: ${humanize(r)}`), ...staleFlags],
           }
         : {
             summary: state.strategyOptions.length

@@ -5,6 +5,8 @@ import type { BrandState } from 'brandstate'
 import type { DecisionStatus, Stage } from '@/lib/strategy'
 import HoverLetters from '@/components/hover-letters'
 import { cn } from '@/lib/utils'
+import ColorWheel from './color-wheel'
+import { humanize } from '@/lib/humanize'
 import { Arrow, Chips, DecisionField, EmptyState, SPRING, SectionHeading, Stamp, btnPrimary, btnSecondary } from './ui'
 
 export const VISUAL_TEXT_FIELDS = [
@@ -57,7 +59,7 @@ function isDark(hex: string): boolean {
 }
 
 /** A palette tile: lifts and tilts on hover, copies its hex on click with a stamp to confirm. */
-function SwatchTile({ swatch, index }: { swatch: Swatch; index: number }) {
+function SwatchTile({ swatch, index, disabled, onChange }: { swatch: Swatch; index: number; disabled: boolean; onChange: () => void }) {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -83,6 +85,7 @@ function SwatchTile({ swatch, index }: { swatch: Swatch; index: number }) {
       style={{ animationDelay: `${index * 80}ms` }}
       className="animate-in fade-in-0 slide-in-from-bottom-3 fill-mode-backwards duration-500"
     >
+      <div className="flex h-full flex-col gap-2">
       <button
         type="button"
         onClick={copy}
@@ -122,6 +125,26 @@ function SwatchTile({ swatch, index }: { swatch: Swatch; index: number }) {
           {swatch.note && <span className="mt-1 line-clamp-2 block text-xs font-semibold leading-snug text-poster-ink/60">{swatch.note}</span>}
         </span>
       </button>
+      {/* Pick a new colour on a wheel — no hex code needed. */}
+      <button
+        type="button"
+        onClick={onChange}
+        disabled={disabled}
+        className={cn(
+          'group/pick inline-flex items-center justify-center gap-1.5 rounded-full border-2 border-poster-ink bg-white px-3 py-1.5 text-xs font-extrabold',
+          'transition-[transform,background-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:bg-poster-green hover:shadow-[3px_3px_0_0_#111]',
+          'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-poster-green/40 disabled:cursor-not-allowed disabled:opacity-40',
+          SPRING,
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn('h-3.5 w-3.5 rounded-full border border-poster-ink transition-transform duration-500 group-hover/pick:rotate-180', SPRING)}
+          style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}
+        />
+        Change colour
+      </button>
+      </div>
     </li>
   )
 }
@@ -219,6 +242,9 @@ export default function VisualTab({
   onEdit: (key: string, label: string, text: string) => void
   onContinue: () => void
 }) {
+  // Which swatch the colour wheel is open for. Declared before the early returns below.
+  const [picking, setPicking] = useState<number | null>(null)
+
   if (!state || state.personality.traits.length === 0) {
     return (
       <EmptyState title="Shape first" stamp="Locked">
@@ -247,10 +273,27 @@ export default function VisualTab({
 
   const status = (key: string) => decisions[key] ?? 'proposed'
   const swatches = v.colors.map(parseColor)
+  const picked = picking === null ? null : swatches[picking]
+
+  /** Swap the chosen swatch's colour in its line, keeping its name and role. */
+  const applyColour = (index: number, hex: string) => {
+    const lines = v.colors.map((line, i) => (i !== index ? line : HEX.test(line) ? line.replace(HEX, hex) : `${line} ${hex}`))
+    onEdit('visualDirection.colors', 'Color direction', lines.join('\n'))
+    setPicking(null)
+  }
   const settledCount = VISUAL_KEYS.filter((k) => decisions[k] === 'accepted' || decisions[k] === 'edited').length
 
   return (
     <div className="space-y-6">
+      {picked?.hex && picking !== null && (
+        <ColorWheel
+          name={picked.name}
+          initial={picked.hex}
+          palette={swatches.map((s) => s.hex).filter((h): h is string => !!h && h !== picked.hex)}
+          onApply={(hex) => applyColour(picking, hex)}
+          onClose={() => setPicking(null)}
+        />
+      )}
       <SectionHeading
         aside={
           <div className="flex items-center gap-3">
@@ -292,7 +335,7 @@ export default function VisualTab({
           How it encodes the personality
         </p>
         <p className="relative mt-1 max-w-3xl font-semibold leading-relaxed">
-          <HighlightTraits text={v.visualPersonality} traits={state.personality.traits} />
+          <HighlightTraits text={humanize(v.visualPersonality)} traits={state.personality.traits} />
         </p>
       </div>
 
@@ -308,7 +351,7 @@ export default function VisualTab({
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(240px,0.8fr)]">
           <ul className="grid grid-cols-2 gap-3 pt-1 sm:grid-cols-3 xl:grid-cols-2">
             {swatches.map((s, i) => (
-              <SwatchTile key={`${i}-${s.line}`} swatch={s} index={i} />
+              <SwatchTile key={`${i}-${s.line}`} swatch={s} index={i} disabled={busy} onChange={() => setPicking(i)} />
             ))}
           </ul>
           <PalettePreview swatches={swatches} name={state.naming.selectedName} tagline={state.naming.tagline.selected} />

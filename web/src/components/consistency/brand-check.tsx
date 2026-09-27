@@ -7,6 +7,7 @@ import { FieldLabel, Panel } from '@/components/project/panel'
 import HoverLetters from '@/components/hover-letters'
 import { ErrorCard, SPRING, Stamp, btnPrimary, btnSecondary, linkButton } from '@/components/strategy/ui'
 import { cn } from '@/lib/utils'
+import { humanize } from '@/lib/humanize'
 
 const SEVERITY: Record<Severity, { label: string; className: string; bar: string }> = {
   critical: { label: '✗ Critical', className: 'bg-[#e5484d] text-white border-[#c4282d]', bar: 'bg-[#e5484d]' },
@@ -27,21 +28,9 @@ const CATEGORY_LABEL: Record<ConsistencyFinding['category'], string> = {
 const isOpen = (f: ConsistencyFinding) => (f.status ?? 'open') === 'open'
 export const findingId = (f: ConsistencyFinding) => `${f.category}::${f.conflictingElements.join('+')}::${f.explanation.slice(0, 60)}`
 
+/** What the finding rests on, in plain words — the engine's field names are translated. */
 function Evidence({ text }: { text: string }) {
-  const parts = text.split(/(\b[a-zA-Z_]+(?:\[\d+\])?\.[A-Za-z][A-Za-z0-9_.[\]]*)/g)
-  return (
-    <p className="text-sm font-semibold leading-relaxed">
-      {parts.map((p, i) =>
-        i % 2 === 1 ? (
-          <code key={i} className="rounded-md border border-poster-ink/20 bg-poster-ink/5 px-1.5 py-0.5 font-mono text-[12px] font-bold">
-            {p}
-          </code>
-        ) : (
-          <span key={i}>{p}</span>
-        ),
-      )}
-    </p>
-  )
+  return <p className="text-sm font-semibold leading-relaxed">{humanize(text)}</p>
 }
 
 function Elapsed() {
@@ -124,7 +113,7 @@ export default function BrandCheck({
                 return (
                   <li
                     key={d.dimension}
-                    title={d.note}
+                    title={d.note ? humanize(d.note) : undefined}
                     style={{ animationDelay: `${i * 50}ms` }}
                     className={cn(
                       'rounded-2xl border-2 bg-white px-3 py-2.5 animate-in fade-in-0 slide-in-from-top-2 fill-mode-backwards duration-500',
@@ -144,7 +133,7 @@ export default function BrandCheck({
 
             {findings.length === 0 ? (
               <p className="rounded-2xl border-2 border-poster-ink bg-poster-green/15 px-5 py-4 font-semibold animate-in fade-in-0 duration-500">
-                Every part that could be compared agrees with the rest. {c.notes?.[0]}
+                Every part that could be compared agrees with the rest. {humanize(c.notes?.[0])}
               </p>
             ) : (
               <ul className="space-y-4">
@@ -186,7 +175,7 @@ export default function BrandCheck({
                           </Stamp>
                         )}
                       </div>
-                      <p className="mt-3 text-lg font-semibold leading-snug">{f.explanation}</p>
+                      <p className="mt-3 text-lg font-semibold leading-snug">{humanize(f.explanation)}</p>
                       <div className="mt-3">
                         <FieldLabel>Evidence</FieldLabel>
                         <div className="mt-1">
@@ -195,7 +184,7 @@ export default function BrandCheck({
                       </div>
                       <div className="mt-3 rounded-xl border-2 border-poster-green bg-poster-green/10 px-3 py-2.5">
                         <FieldLabel className="text-poster-ink">Recommended correction</FieldLabel>
-                        <p className="mt-1 text-sm font-semibold leading-snug">{f.recommendedCorrection}</p>
+                        <p className="mt-1 text-sm font-semibold leading-snug">{humanize(f.recommendedCorrection)}</p>
                       </div>
                       {!handled ? (
                         <div className="mt-4 flex flex-wrap gap-2">

@@ -13,6 +13,7 @@ import { FieldLabel, Panel } from '@/components/project/panel'
 import HoverLetters from '@/components/hover-letters'
 import { Arrow, EmptyState, ErrorCard, SPRING, Stamp, btnPrimary, btnSecondary, linkButton } from '@/components/strategy/ui'
 import { cn } from '@/lib/utils'
+import { humanize, humanizeInline } from '@/lib/humanize'
 
 /* ------------------------------------------------------------------------------------ */
 
@@ -296,7 +297,7 @@ function Repair({
       </div>
       <p className="mt-3 text-sm font-semibold text-poster-ink/65">
         <span className="font-extrabold uppercase tracking-wide text-poster-ink">Why · </span>
-        {repair.rationale}
+        {humanize(repair.rationale)}
       </p>
 
       {editing ? (
@@ -420,7 +421,7 @@ export function ContentResults({
               <Stamp tone={OVERALL_STYLE[check.result.overall].tone} className="px-5 py-2 text-base">
                 {OVERALL_STYLE[check.result.overall].stamp}
               </Stamp>
-              <p className="min-w-0 flex-1 font-semibold leading-snug">{check.result.summary}</p>
+              <p className="min-w-0 flex-1 font-semibold leading-snug">{humanize(check.result.summary)}</p>
             </div>
 
             <QuotedContent content={check.repaired ?? check.content} mark={check.repair ? undefined : check.result.repair?.original} />
@@ -449,15 +450,14 @@ export function ContentResults({
                       <span className="text-sm font-extrabold uppercase tracking-wide">{meta.label}</span>
                       <span className={cn('ml-auto rounded-full border-2 px-2.5 py-0.5 text-[11px] font-extrabold uppercase', badge.className)}>{badge.label}</span>
                     </div>
-                    <p className="mt-2 text-sm font-semibold leading-snug">{d.finding}</p>
+                    <p className="mt-2 text-sm font-semibold leading-snug">{humanize(d.finding)}</p>
                     <p className="mt-1.5 text-xs font-semibold text-poster-ink/50">
-                      Judged against{' '}
-                      <code className="rounded-md border border-poster-ink/15 bg-poster-ink/5 px-1.5 py-0.5 font-mono text-[11px] font-bold text-poster-ink/70">{d.evidence}</code>
+                      Judged against <span className="font-bold text-poster-ink/70">{humanizeInline(d.evidence)}</span>
                     </p>
                     {d.recommendation && (
                       <p className="mt-2 rounded-xl bg-poster-green/10 px-3 py-2 text-sm font-semibold">
                         <span className="font-extrabold uppercase tracking-wide">Recommendation · </span>
-                        {d.recommendation}
+                        {humanize(d.recommendation)}
                       </p>
                     )}
                   </li>

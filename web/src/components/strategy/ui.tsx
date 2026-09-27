@@ -6,6 +6,7 @@ import type { DecisionStatus } from '@/lib/strategy'
 import { FieldLabel } from '@/components/project/panel'
 import HoverLetters from '@/components/hover-letters'
 import { cn } from '@/lib/utils'
+import { humanize } from '@/lib/humanize'
 
 /*
  * Shared pieces for the strategy tabs, in the same poster language as /new and the
@@ -273,7 +274,7 @@ export function DotList({ items, tone = 'green' }: { items: string[]; tone?: 'gr
               dot,
             )}
           />
-          {item}
+          {humanize(item)}
         </li>
       ))}
     </ul>
@@ -294,7 +295,7 @@ export function Chips({ items, tone = 'plain' }: { items: string[]; tone?: 'plai
               : 'border-[#e5484d]/60 bg-[#e5484d]/10 line-through decoration-[#e5484d]/60',
           )}
         >
-          {item}
+          {humanize(item)}
         </li>
       ))}
     </ul>

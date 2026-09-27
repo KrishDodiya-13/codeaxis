@@ -13,7 +13,8 @@ export interface ReadinessItem {
   label: string
   done: boolean
   /** Which page fixes it. */
-  href: 'discover' | 'strategy' | 'stress-test' | 'consistency'
+  /** Which page (and, for the self-check, which tab) fixes it. */
+  href: 'discover' | 'strategy' | 'stress-test' | 'consistency#self-check'
   hint: string
 }
 
@@ -35,7 +36,7 @@ export function readiness(state: BrandState): ReadinessItem[] {
     { label: 'Voice', done: state.voice.toneAttributes.length > 0, href: 'strategy', hint: 'Generate the brand shape' },
     { label: 'Visual direction', done: state.visualDirection.mood !== '', href: 'strategy', hint: 'Generate the visual direction' },
     { label: 'Stress test', done: state.stressTests.length > 0, href: 'stress-test', hint: 'Run the stress test' },
-    { label: 'Self-check', done: state.consistency.status !== 'not-yet-checked', href: 'consistency', hint: 'Run the brand self-check' },
+    { label: 'Self-check', done: state.consistency.status !== 'not-yet-checked', href: 'consistency#self-check', hint: 'Run the brand self-check' },
   ]
 }
 

@@ -101,6 +101,8 @@ export default function ConsistencyWorkspace({ id }: { id: string }) {
     const last = h.checks[0] ?? null
     setCurrent(last)
     setDraft(last ? (last.repaired ?? last.content) : '')
+    // Deep link from Brand OS's readiness list: open straight on the self-check.
+    if (window.location.hash === '#self-check') setMode('brand')
     setLoaded(true)
   }, [id])
 

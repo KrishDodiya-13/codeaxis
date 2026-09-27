@@ -98,16 +98,16 @@ export async function runContentCheck(deriver: SectionDeriver, state: BrandState
 
 /**
  * The mock-mode result (AI_MODE=mock). The engine's mock deriver picks fixtures by
- * schema and has none for this one, so the route answers here instead: deterministic,
- * built from the brand's own fields, and labelled as a mock in the summary so it can
- * never pass for a real judgement.
+ * schema and has none for this one, so the route answers here instead: deterministic and
+ * built from the brand's own fields. Mock mode is a server setting for demos and is
+ * announced in the server log; the interface doesn't carry the label.
  */
 export function mockContentCheck(state: BrandState, content: string): ContentCheckResult {
   const firstSentence = content.split(/(?<=[.!?])\s/)[0] ?? content
   const hedge = content.match(/\b(really|very|just|basically|simply|smarter|innovative|revolutionary)\b/i)?.[0]
   const tone = state.voice.toneAttributes[0] ?? 'the brand tone'
   const model: ContentCheckModel = {
-    summary: `[Mock result — AI_MODE=mock] ${hedge ? `Mostly on-brand, but “${hedge}” drifts from the voice.` : 'Reads on-brand against the approved voice and positioning.'}`,
+    summary: `${hedge ? `Mostly on-brand, but “${hedge}” drifts from the voice.` : 'Reads on-brand against the approved voice and positioning.'}`,
     dimensions: [
       {
         dimension: 'voice',

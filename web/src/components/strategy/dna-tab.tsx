@@ -6,6 +6,7 @@ import type { Confidence } from 'brandstate'
 import { selectedOption, type StrategyWorkspace, type TabKey } from '@/lib/strategy'
 import { FieldLabel } from '@/components/project/panel'
 import { cn } from '@/lib/utils'
+import { humanize } from '@/lib/humanize'
 import { Arrow, ConfidenceTag, DotList, EmptyState, SPRING, btnPrimary, btnSecondary } from './ui'
 import { SHAPE_KEYS } from './shape-tab'
 import { VISUAL_KEYS } from './visual-tab'
@@ -359,7 +360,7 @@ export default function DnaTab({
             </div>
             <div>
               <FieldLabel>Decision</FieldLabel>
-              <p className="mt-1 font-semibold leading-snug">{active.decision ?? '—'}</p>
+              <p className="mt-1 font-semibold leading-snug">{active.decision ? humanize(active.decision) : '—'}</p>
             </div>
             {active.rationale.length > 0 && (
               <div>
@@ -371,7 +372,7 @@ export default function DnaTab({
             )}
             <div>
               <FieldLabel>Source</FieldLabel>
-              <p className="mt-1 break-words font-mono text-xs font-semibold text-poster-ink/70">{active.source}</p>
+              <p className="mt-1 break-words text-sm font-semibold text-poster-ink/70">{humanize(active.source.replace(/→/g, '·'))}</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <FieldLabel>Confidence</FieldLabel>

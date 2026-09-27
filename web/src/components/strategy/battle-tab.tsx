@@ -5,6 +5,7 @@ import type { BrandState, Direction, StrategyOption } from 'brandstate'
 import { directionLabel } from '@/lib/strategy'
 import { FieldLabel } from '@/components/project/panel'
 import { cn } from '@/lib/utils'
+import { humanize } from '@/lib/humanize'
 import { Arrow, DotList, EmptyState, SectionHeading, Stamp, btnPrimary, btnSecondary, linkButton, SPRING } from './ui'
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E']
@@ -69,7 +70,7 @@ function DirectionCard({
       <h3 className="mt-4 font-display text-xl uppercase leading-[0.95] tracking-[-0.03em] transition-colors duration-300 group-hover/card:text-poster-green">
         {option.name}
       </h3>
-      <p className="mt-3 font-semibold leading-snug">{option.coreIdea}</p>
+      <p className="mt-3 font-semibold leading-snug">{humanize(option.coreIdea)}</p>
 
       <div className="mt-4 space-y-4 text-sm">
         <div>
@@ -105,7 +106,7 @@ function DirectionCard({
               </div>
             </div>
           ) : (
-            <p className="mt-1 font-semibold leading-snug text-poster-ink/75">{option.positioning}</p>
+            <p className="mt-1 font-semibold leading-snug text-poster-ink/75">{humanize(option.positioning)}</p>
           )}
         </div>
         <div>
@@ -128,11 +129,11 @@ function DirectionCard({
         </div>
         <div>
           <FieldLabel>Audience fit</FieldLabel>
-          <p className="mt-1 font-semibold leading-snug">{option.audienceFit}</p>
+          <p className="mt-1 font-semibold leading-snug">{humanize(option.audienceFit)}</p>
         </div>
         <div>
           <FieldLabel>Differentiation</FieldLabel>
-          <p className="mt-1 font-semibold leading-snug">{option.differentiation}</p>
+          <p className="mt-1 font-semibold leading-snug">{humanize(option.differentiation)}</p>
         </div>
       </div>
 

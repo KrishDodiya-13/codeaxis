@@ -7,6 +7,7 @@ import { DECISION_LABELS, DECISION_STAGE, TEST_META, type Outcome } from '@/lib/
 import { FieldLabel } from '@/components/project/panel'
 import { SPRING, Stamp, btnPrimary, btnSecondary, linkButton } from '@/components/strategy/ui'
 import { cn } from '@/lib/utils'
+import { humanize } from '@/lib/humanize'
 
 /** Severity → colors. Critical/high read as a fail, medium a warning, low a note. */
 export const SEVERITY_STYLE: Record<Severity, { bar: string; badge: string; label: string; hover: string }> = {
@@ -23,21 +24,9 @@ const OUTCOME_STAMP: Record<Outcome, { text: string; tone: 'green' | 'white' | '
 }
 
 /** Evidence with every cited field path (`positioning.valueProposition`) set as a code chip. */
+/** What the finding rests on, in plain words — the engine's field names are translated. */
 function Evidence({ text }: { text: string }) {
-  const parts = text.split(/(\b[a-zA-Z_]+(?:\[\d+\])?\.[A-Za-z][A-Za-z0-9_.[\]]*)/g)
-  return (
-    <p className="text-sm font-semibold leading-relaxed">
-      {parts.map((part, i) =>
-        i % 2 === 1 ? (
-          <code key={i} className="rounded-md border border-poster-ink/20 bg-poster-ink/5 px-1.5 py-0.5 font-mono text-[12px] font-bold">
-            {part}
-          </code>
-        ) : (
-          <span key={i}>{part}</span>
-        ),
-      )}
-    </p>
-  )
+  return <p className="text-sm font-semibold leading-relaxed">{humanize(text)}</p>
 }
 
 /** The real follow-through after a decision, ticked as each step actually completes. */
@@ -112,7 +101,7 @@ export default function FindingCard({
 
   return (
     <article
-      aria-label={`${meta.label} finding: ${finding.issue}`}
+      aria-label={`${meta.label} finding: ${humanize(finding.issue)}`}
       style={{ animationDelay: `${Math.min(index, 8) * 90}ms` }}
       className={cn(
         'group/f relative overflow-hidden rounded-2xl border-2 border-poster-ink bg-white pl-3',
@@ -150,7 +139,7 @@ export default function FindingCard({
           )}
         </div>
 
-        <p className="mt-3 text-lg font-semibold leading-snug">{finding.issue}</p>
+        <p className="mt-3 text-lg font-semibold leading-snug">{humanize(finding.issue)}</p>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div>
@@ -161,19 +150,19 @@ export default function FindingCard({
           </div>
           <div>
             <FieldLabel>Impact</FieldLabel>
-            <p className="mt-1 text-sm font-semibold leading-relaxed">{finding.impact}</p>
+            <p className="mt-1 text-sm font-semibold leading-relaxed">{humanize(finding.impact)}</p>
           </div>
         </div>
 
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           <div className="rounded-xl border-2 border-poster-green bg-poster-green/10 px-3 py-2.5">
             <FieldLabel className="text-poster-ink">Recommendation</FieldLabel>
-            <p className="mt-1 text-sm font-semibold leading-snug">{finding.recommendation}</p>
+            <p className="mt-1 text-sm font-semibold leading-snug">{humanize(finding.recommendation)}</p>
           </div>
           {finding.alternative && (
             <div className="rounded-xl border-2 border-dashed border-poster-ink/30 px-3 py-2.5">
               <FieldLabel>Alternative</FieldLabel>
-              <p className="mt-1 text-sm font-semibold leading-snug">{finding.alternative}</p>
+              <p className="mt-1 text-sm font-semibold leading-snug">{humanize(finding.alternative)}</p>
             </div>
           )}
         </div>
