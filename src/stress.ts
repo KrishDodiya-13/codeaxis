@@ -123,15 +123,31 @@ export type StressTestOptions = {
   maxImpactOverlap?: number;
 };
 
+/** `selectedStrategy` -> `selected_strategy`, matching the prompt's tag names. */
+function snakeCase(name: string): string {
+  return name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
 /**
  * Matches a citation of an actual `BrandState` field path.
  *
  * Accepts an array index between the section and the field, because evidence
  * pointing at one entry of a list — `strategyOptions[2].positioning`,
  * `stressTests[0].issue` — is a more precise citation, not a worse one.
+ *
+ * Both spellings of each section are accepted. The prompt wraps the chosen strategy in
+ * a `<selected_strategy>` tag, so a model that cites `selected_strategy.positioning` is
+ * quoting the name it was shown — rejecting that as ungrounded would fail a finding for
+ * matching our own prompt, and send the step into a pointless retry.
  */
+const SECTION_ALIASES = [
+  'project',
+  ...SECTION_ORDER,
+  ...SECTION_ORDER.map(snakeCase).filter((name) => !SECTION_ORDER.includes(name as never)),
+];
+
 const FIELD_PATH = new RegExp(
-  `\\b(project|${SECTION_ORDER.join('|')})(\\[\\d+\\])?\\.[A-Za-z][A-Za-z0-9_.\\[\\]]*`,
+  `\\b(${SECTION_ALIASES.join('|')})(\\[\\d+\\])?\\.[A-Za-z][A-Za-z0-9_.\\[\\]]*`,
 );
 
 /** Whether `evidence` cites at least one real field path rather than a vague gesture. */

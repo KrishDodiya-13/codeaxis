@@ -9,7 +9,7 @@
  * Re-selecting is allowed — a user may change their mind while comparing — and the
  * previous choice comes back in the response so the UI can say what changed.
  */
-import { applyDelta, resolveSelectedStrategy, selectStrategy } from 'brandstate';
+import { resolveSelectedStrategy, selectStrategy } from 'brandstate';
 import { SelectStrategyBody } from '@/lib/api/contracts';
 import type { SelectStrategyResponse } from '@/lib/api/contracts';
 import { BadRequestError, handle, ok, parseBody } from '@/lib/api/respond';

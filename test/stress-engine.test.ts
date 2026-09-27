@@ -230,6 +230,20 @@ describe('evidence must come from the actual BrandState', () => {
     }
   });
 
+  it('accepts the snake_case spelling the prompt itself shows the model', () => {
+    // The stress prompt wraps the chosen strategy in a <selected_strategy> tag, so a
+    // model citing `selected_strategy.positioning` is quoting the name it was given.
+    // Rejecting it failed correctly-grounded findings and forced a needless retry,
+    // which on a token-capped provider then truncated the response.
+    for (const evidence of [
+      'selected_strategy.positioning',
+      'selected_strategy.differentiation vs positioning.differentiator',
+      'visual_direction.visualPersonality',
+    ]) {
+      assert.equal(citesFieldPath(evidence), true, evidence);
+    }
+  });
+
   it('rejects evidence that names no field, however plausible it reads', () => {
     for (const evidence of [
       'competitors in this space all claim the same thing',
