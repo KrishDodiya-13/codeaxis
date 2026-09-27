@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BrandOs } from 'brandstate'
 import { loadProject, type Project } from '@/lib/projects'
+import { postJson as post } from '@/lib/api/client'
 import { loadWorkspace, type StrategyWorkspace } from '@/lib/strategy'
 import { SECTIONS, blockingCount, loadBrandOs, readiness, saveBrandOs, toMarkdown, type CompiledBrandOs } from '@/lib/brand-os'
 import { PosterRoom } from '@/components/landing/poster-section'
@@ -18,18 +19,6 @@ interface ApiError {
   detail?: string
 }
 
-async function post<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  const data: unknown = await res.json().catch(() => null)
-  if (!res.ok) {
-    const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
-    const message = typeof record.error === 'string' ? record.error : 'The request failed.'
-    const detail = record.detail === undefined ? undefined : typeof record.detail === 'string' ? record.detail : JSON.stringify(record.detail)
-    const headline = detail && message.endsWith(` — ${detail}`) ? message.slice(0, -(detail.length + 3)) : message
-    throw Object.assign(new Error(headline), { detail })
-  }
-  return data as T
-}
 
 function Elapsed() {
   const [s, setS] = useState(0)

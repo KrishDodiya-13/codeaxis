@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { BrandState, Direction } from 'brandstate'
 import { ideaForEngine, loadProject, type Project } from '@/lib/projects'
+import { redirectToLogin } from '@/lib/api/client'
 import {
   DEPENDENTS,
   STAGES,
@@ -143,6 +144,14 @@ async function post(body: unknown): Promise<StrategyResponse> {
     body: JSON.stringify(body),
   })
   const data: unknown = await res.json().catch(() => null)
+
+  // The session went away while the page was open — a password reset revokes sessions
+  // deliberately. Login, with a way back, beats an error card they cannot act on.
+  if (res.status === 401) {
+    redirectToLogin()
+    await new Promise<never>(() => {})
+  }
+
   if (!res.ok) {
     const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
     const message = typeof record.error === 'string' ? record.error : 'The strategy request failed.'

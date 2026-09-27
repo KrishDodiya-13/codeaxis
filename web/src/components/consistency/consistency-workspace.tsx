@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BrandState, ConsistencyFinding, DecisionName } from 'brandstate'
 import { loadProject, newId, type Project } from '@/lib/projects'
+import { postJson as post } from '@/lib/api/client'
 import { loadWorkspace, logEntry, saveWorkspace, type Stage, type StrategyWorkspace } from '@/lib/strategy'
 import { flagForUpdate } from '@/lib/stress'
 import {
@@ -29,18 +30,6 @@ interface ApiError {
 }
 
 /** Same error contract as the other pages: `{ error, detail? }`, detail in development only. */
-async function post<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  const data: unknown = await res.json().catch(() => null)
-  if (!res.ok) {
-    const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
-    const message = typeof record.error === 'string' ? record.error : 'The request failed.'
-    const detail = record.detail === undefined ? undefined : typeof record.detail === 'string' ? record.detail : JSON.stringify(record.detail)
-    const headline = detail && message.endsWith(` — ${detail}`) ? message.slice(0, -(detail.length + 3)) : message
-    throw Object.assign(new Error(headline), { detail })
-  }
-  return data as T
-}
 
 const toError = (e: unknown): ApiError => ({
   message: e instanceof Error ? e.message : 'The check failed.',
