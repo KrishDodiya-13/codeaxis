@@ -1,13 +1,7 @@
-import HeroSection from '@/components/landing/hero-section'
-import WorkflowStages from '@/components/landing/workflow-stages'
-import CallToAction from '@/components/landing/call-to-action'
-
 export default function Home() {
   return (
-    <main>
-      <HeroSection />
-      <WorkflowStages />
-      <CallToAction />
+    <main className="flex min-h-[100svh] items-center justify-center">
+      <h1 className="text-4xl font-semibold tracking-tight">BRANDOS</h1>
     </main>
   )
 }
