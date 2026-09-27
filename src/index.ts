@@ -92,12 +92,17 @@ export type { SectionDiff, ValidationResult } from './state.ts';
 export {
   BrandClient,
   CREDENTIAL_ENV_VAR,
+  DEFAULT_MAX_TOKENS,
   MODEL_ENV_VAR,
+  isQuotaExhausted,
+  isRequestTooLargeError,
+  isTruncatedError,
   resolveModel,
   DEFAULT_MODEL,
   InvalidCredentialError,
   MissingCredentialError,
   ModelRequestError,
+  QuotaExceededError,
   ModelTimeoutError,
   RefusalError,
   SchemaValidationError,
@@ -142,12 +147,14 @@ export {
 export type { DiscoverAnswers, DiscoverRequest, DiscoverResult } from './discover.ts';
 
 export {
+  DiscoveryEmptyError,
   DiscoveryIncompleteError,
   PositionInputError,
   VagueCategoryError,
   detectsAudienceNarrowing,
   hashDiscovery,
   isCategoryAllFiller,
+  emptyDiscoveryFields,
   isDiscoveryReadyToPosition,
   isPositioningStale,
   position,
@@ -246,6 +253,15 @@ export type {
   ConsistencySummary,
   DimensionReport,
 } from './consistency.ts';
+
+export { AI_MODE_ENV_VAR, InvalidAiModeError, createDeriver, resolveAiMode } from './provider.ts';
+export type { AiMode, CreateDeriverOptions } from './provider.ts';
+
+export { MockDeriver, MockFixtureError } from './mock/deriver.ts';
+export type { MockDeriverOptions } from './mock/deriver.ts';
+
+export { CachingDeriver, DeriverCache } from './cache.ts';
+export type { CacheScope, CacheStats, DeriverCacheOptions } from './cache.ts';
 
 export { createDiscoverServer, listen } from './server.ts';
 export type { ServerOptions } from './server.ts';

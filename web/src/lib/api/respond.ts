@@ -13,17 +13,25 @@ import { ZodError } from 'zod';
 import {
   InvalidCredentialError,
   MissingCredentialError,
+  MockFixtureError,
   ModelRequestError,
+  QuotaExceededError,
+  resolveAiMode,
   ModelTimeoutError,
   SchemaValidationError,
   BattleInputError,
+  BrandOsInputError,
   ConsistencyInputError,
+  DiscoveryEmptyError,
   DiscoveryIncompleteError,
   IndistinctStrategiesError,
   InvalidDirectionsError,
   PositionInputError,
   DiscoverInputError,
   RefusalError,
+  FinalizationBlockedError,
+  IncompleteBrandOsError,
+  IncompleteBrandStateError,
   SectionParseError,
   UncheckableConsistencyError,
   VagueCategoryError,
@@ -142,6 +150,7 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
       error instanceof DiscoverInputError ||
       error instanceof PositionInputError ||
       error instanceof BattleInputError ||
+      error instanceof BrandOsInputError ||
       error instanceof ConsistencyInputError ||
       error instanceof InvalidDirectionsError
     ) {
@@ -159,6 +168,13 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
 
     /* ---- the request is fine, but it is too early ---- */
 
+    if (error instanceof DiscoveryEmptyError) {
+      // A precondition, and not one forceProceed can override: there is nothing to
+      // position against, so proceeding would mean inventing the product.
+      return fail(400, 'discovery_incomplete', error.message, {
+        details: { empty: error.empty },
+      });
+    }
     if (error instanceof DiscoveryIncompleteError) {
       // 422 rather than 400: nothing is wrong with the request, the work just is not
       // finished. The questions come back so the UI can ask them.
@@ -206,6 +222,26 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
         retryable: true,
       });
     }
+    if (error instanceof FinalizationBlockedError) {
+      // The stress-test gate. Not retryable: the findings have to be resolved or
+      // explicitly accepted first, or the caller must pass allowUnvalidated.
+      return fail(409, 'stress_test_not_ready', error.message, {
+        details: { blocking: error.blocking },
+      });
+    }
+    if (error instanceof IncompleteBrandStateError) {
+      // A precondition, not a model problem: the caller has stages left to run.
+      return fail(400, 'brand_state_incomplete', error.message, {
+        details: { missing: error.missing },
+      });
+    }
+    if (error instanceof IncompleteBrandOsError) {
+      // The deliverable came back with empty required fields after the retries.
+      return fail(502, 'brand_os_incomplete', error.message, {
+        details: { empty: error.empty },
+        retryable: true,
+      });
+    }
     if (error instanceof UncheckableConsistencyError) {
       // Findings whose evidence cites nothing cannot be shown as though the engine had
       // checked them, so this is an error rather than a partial result.
@@ -216,6 +252,22 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
     }
     if (error instanceof SectionParseError) {
       return fail(502, 'model_output_invalid', error.message, { retryable: true });
+    }
+    if (error instanceof QuotaExceededError) {
+      // Not retryable, and deliberately not reported as a rate limit: waiting does not
+      // help a spent allowance, so a client that retries on 429 must not retry this.
+      return fail(429, 'quota_exhausted', error.message, {
+        details: error.retryAfter === undefined ? undefined : { retryAfter: error.retryAfter },
+        retryable: false,
+      });
+    }
+    if (error instanceof MockFixtureError) {
+      // Mock mode only: a fixture no longer satisfies its schema. A configuration fault
+      // on this server, not a bad request, and it must be loud rather than papered over.
+      console.error('[brandos] mock fixture does not match schema', error.section);
+      return fail(500, 'mock_fixture_invalid', error.message, {
+        details: { section: error.section },
+      });
     }
     if (error instanceof ModelRequestError) {
       // Rate limit, server error, network. Worth retrying.
@@ -295,6 +347,10 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
 
 /** A guard for routes that need a configured model credential. */
 export function requireModelCredentials(): void {
+  // Mock mode makes no provider request, so demanding a credential would block the one
+  // situation mock mode exists for: developing when there is no usable key.
+  if (resolveAiMode() === 'mock') return;
+
   // Fails before the stage runs, so the message names the cause instead of surfacing an
   // SDK error from three layers down. The check itself lives in one place, shared with
   // /api/discover, so the routes cannot disagree about what counts as configured.

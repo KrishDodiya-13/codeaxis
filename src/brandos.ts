@@ -19,7 +19,7 @@ import { BRAND_OS_INSTRUCTIONS, buildBrandOsPrompt } from './prompts.ts';
 import { BrandOsDraftSchema, SCHEMA_VERSION, parseBrandState } from './schemas.ts';
 import { SECTION_ORDER, isSectionPopulated, resolveSelectedStrategy, stableStringify } from './state.ts';
 import { blockingFindings, openFindings, summarize } from './stress.ts';
-import type { BrandState, StressTest } from './types.ts';
+import type { BrandState, ConsistencyFinding, StressTest } from './types.ts';
 import type { z } from 'zod';
 
 export type BrandOsDraft = z.infer<typeof BrandOsDraftSchema>;
@@ -36,8 +36,29 @@ export type ReadinessCheck = {
   detail: string;
 };
 
+/** The naming decision as it was actually made, carried across rather than restated. */
+export type NamingDirection = {
+  /** The approaches explored, e.g. "descriptive", "evocative", "coined". */
+  territories: string[];
+  selectedName: string;
+  rationale: string;
+};
+
+export type TaglineDirection = {
+  selected: string;
+  /** The lines considered and passed over, so the choice stays auditable. */
+  alternatives: string[];
+};
+
 export type BrandOs = {
   strategy: {
+    /** From `discovery.problem`. The brand exists to solve this. */
+    problem: string;
+    audience: string;
+    category: string;
+    positioning: string;
+    valueProposition: string;
+    differentiator: string;
     purpose: string;
     mission: string;
     vision: string;
@@ -49,28 +70,53 @@ export type BrandOs = {
   identity: {
     name: string;
     nameRationale: string;
+    personality: string[];
+    principles: string[];
+    namingDirection: NamingDirection;
+    taglineDirection: TaglineDirection;
     coreValues: string[];
     personalityTraits: string[];
     archetype: string;
   };
   visual: {
+    colorDirection: string[];
+    typography: string;
+    imagery: string;
+    shapeLanguage: string;
+    composition: string;
+    avoid: string[];
     logoDirection: string;
     colorPalette: string[];
     typographySystem: string;
     imageryStyle: string;
   };
   voice: {
+    tone: string[];
+    messagingHierarchy: { primaryMessage: string; supportingMessages: string[] };
+    examples: { headline: string; boilerplate: string };
     toneGuidelines: string[];
     messagingPillars: string[];
     taglines: string[];
     sampleCopy: { headline: string; boilerplate: string };
   };
   launch: {
+    /** The three pieces of launch copy. Nothing earlier in the pipeline wrote these. */
+    onelinePitch: string;
+    landingHeadline: string;
+    launchMessage: string;
     goToMarketSummary: string;
     keyChannels: string[];
     rolloutSequence: RolloutMilestone[];
   };
   validation: {
+    /** Every stress-test finding, not just the counts. */
+    stressTestFindings: StressTest[];
+    /** Every consistency finding, from the consistency check. */
+    consistencyFindings: ConsistencyFinding[];
+    /** What is still open, across both checks. */
+    remainingRisks: string[];
+    /** What to do about them, drawn from the findings' own recommendations. */
+    recommendations: string[];
     stressTestSummary: {
       critical: number;
       high: number;
@@ -163,7 +209,20 @@ export function findMissingForCompile(state: BrandState): string[] {
     // finalBrand is not required: the Brand OS is the deliverable, and locking is a
     // separate act that may or may not have happened yet.
     if (section === 'finalBrand') continue;
-    if (!isSectionPopulated(state, section)) missing.push(`${section} has not been derived`);
+    if (!isSectionPopulated(state, section)) {
+      // `stressTests` is a bare array, so an empty one cannot be told apart from a check
+      // that ran and found nothing. The gate stays closed either way: letting a brand
+      // that was never stress-tested compile is a worse failure than making a genuinely
+      // clean brand record an explicit accepted finding. The message says so rather than
+      // leaving the reader to guess why a passing brand is blocked.
+      missing.push(
+        section === 'stressTests'
+          ? 'stressTests has not been derived — run POST /api/projects/:id/stress-test. ' +
+            'If it ran and found nothing, that clean result is not yet distinguishable ' +
+            'from never having run, so the gate stays closed.'
+          : `${section} has not been derived`,
+      );
+    }
   }
 
   if (state.naming.selectedName === undefined) missing.push('naming.selectedName has not been chosen');
@@ -334,8 +393,21 @@ export function assembleBrandOs(state: BrandState, draft: BrandOsDraft): BrandOs
   const open = openFindings(state.stressTests);
   const accepted = state.stressTests.filter((finding) => finding.status === 'acknowledged');
 
+  const consistencyFindings = state.consistency.findings ?? [];
+  const openConsistency = consistencyFindings.filter(
+    (finding) => (finding.status ?? 'open') === 'open',
+  );
+
   const brandOs: BrandOs = {
     strategy: {
+      // Copied from the approved state, never re-derived: these are decisions the user
+      // already made and signed off, and the deliverable must agree with them exactly.
+      problem: state.discovery.problem,
+      audience: state.discovery.targetAudience,
+      category: state.positioning.category,
+      positioning: state.finalBrand?.positioningStatement ?? strategy.positioning,
+      valueProposition: state.positioning.valueProposition,
+      differentiator: state.positioning.differentiator,
       purpose: draft.purpose,
       mission: draft.mission,
       vision: draft.vision,
@@ -349,18 +421,47 @@ export function assembleBrandOs(state: BrandState, draft: BrandOsDraft): BrandOs
     identity: {
       name: state.naming.selectedName!,
       nameRationale: draft.nameRationale,
+      personality: [...state.personality.traits],
+      // Principles come from personality.values, which is where the pipeline defines
+      // them, so the Brand OS and the Brand DNA cannot disagree about what they are.
+      principles: [...state.personality.values],
+      namingDirection: {
+        territories: [...state.naming.territories],
+        selectedName: state.naming.selectedName!,
+        rationale: draft.nameRationale,
+      },
+      taglineDirection: {
+        selected: state.naming.tagline.selected!,
+        alternatives: state.naming.tagline.candidates.filter(
+          (line) => line !== state.naming.tagline.selected,
+        ),
+      },
       coreValues: [...state.personality.values],
       personalityTraits: [...state.personality.traits],
       // The state's archetype wins: the draft is only asked for one when there is none.
       archetype: state.personality.archetype ?? draft.archetype,
     },
     visual: {
+      colorDirection: [...state.visualDirection.colors],
+      typography: state.visualDirection.typography,
+      imagery: state.visualDirection.imagery,
+      shapeLanguage: state.visualDirection.shapes,
+      composition: state.visualDirection.composition,
+      avoid: [...state.visualDirection.avoid],
       logoDirection: draft.logoDirection,
       colorPalette: [...state.visualDirection.colors],
       typographySystem: state.visualDirection.typography,
       imageryStyle: `${state.visualDirection.imagery} Shape language: ${state.visualDirection.shapes}`.trim(),
     },
     voice: {
+      tone: [...state.voice.toneAttributes],
+      // The hierarchy is carried across structured rather than flattened, so the one
+      // thing to say stays distinguishable from what backs it up.
+      messagingHierarchy: {
+        primaryMessage: state.voice.messagingHierarchy.primaryMessage,
+        supportingMessages: [...state.voice.messagingHierarchy.supportingMessages],
+      },
+      examples: { ...draft.sampleCopy },
       toneGuidelines: [...state.voice.toneAttributes, ...state.voice.writingPrinciples],
       messagingPillars: [
         state.voice.messagingHierarchy.primaryMessage,
@@ -375,11 +476,32 @@ export function assembleBrandOs(state: BrandState, draft: BrandOsDraft): BrandOs
       sampleCopy: { ...draft.sampleCopy },
     },
     launch: {
+      onelinePitch: draft.launch.onelinePitch,
+      landingHeadline: draft.launch.landingHeadline,
+      launchMessage: draft.launch.launchMessage,
       goToMarketSummary: draft.launch.goToMarketSummary,
       keyChannels: [...draft.launch.keyChannels],
       rolloutSequence: draft.launch.rolloutSequence.map((milestone) => ({ ...milestone })),
     },
     validation: {
+      // The findings themselves, not just counts: a reader has to be able to see what
+      // was challenged and what the answer was.
+      stressTestFindings: state.stressTests.map((finding) => ({ ...finding })),
+      consistencyFindings: consistencyFindings.map((finding) => ({ ...finding })),
+      remainingRisks: [
+        ...open.map(describeFinding),
+        ...openConsistency.map(
+          (finding) =>
+            `[${finding.severity}] ${finding.category}: ${finding.explanation} ` +
+            `(${finding.conflictingElements.join(' vs ')})`,
+        ),
+      ],
+      // Taken from the findings' own recommendations rather than written afresh: this
+      // step reports the outstanding work, it does not re-decide it.
+      recommendations: [
+        ...open.map((finding) => finding.recommendation),
+        ...openConsistency.map((finding) => finding.recommendedCorrection),
+      ],
       stressTestSummary: summarizeFindings(state.stressTests),
       // Risks are what is still open; flags separate out the accepted trade-offs, which
       // are not open but are still things a reader must know about.
@@ -411,7 +533,22 @@ export function assembleBrandOs(state: BrandState, draft: BrandOsDraft): BrandOs
  * and are exempt.
  */
 export function findEmptyFields(brandOs: BrandOs): string[] {
-  const exempt = new Set(['validation.risks', 'validation.openFlags']);
+  // Empty here is a *good* result, not a missing field: a brand that passed every check
+  // has no findings, no risks and nothing to recommend. Treating those as stubs would
+  // make a clean brand the only one that cannot be compiled.
+  const exempt = new Set([
+    'validation.risks',
+    'validation.openFlags',
+    'validation.stressTestFindings',
+    'validation.consistencyFindings',
+    'validation.remainingRisks',
+    'validation.recommendations',
+    // One tagline candidate that was selected leaves no alternatives.
+    'identity.taglineDirection.alternatives',
+    // A single-message hierarchy is legitimate.
+    'voice.messagingHierarchy.supportingMessages',
+    'visual.avoid',
+  ]);
   const empty: string[] = [];
 
   const walk = (value: unknown, path: string): void => {

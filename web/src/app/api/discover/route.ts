@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import {
-  BrandClient,
+  createDeriver,
+  resolveAiMode,
   InvalidCredentialError,
   MissingCredentialError,
   ModelRequestError,
@@ -64,14 +65,15 @@ export async function POST(request: Request) {
 
   // Checked before the call so the message names the cause, rather than surfacing an
   // SDK auth error from three layers down. This is the next thing a fresh clone hits.
-  const credentialIssue = credentialProblem()
+  // Mock mode makes no provider request, so it needs no key — that is the point of it.
+  const credentialIssue = resolveAiMode() === 'mock' ? null : credentialProblem()
   if (credentialIssue !== null) return error(503, credentialIssue)
 
   const { idea, discovery: priorDiscovery, answers } = input.data
 
   let result: Awaited<ReturnType<typeof discover>>
   try {
-    result = await discover(new BrandClient(), {
+    result = await discover(createDeriver(), {
       idea,
       ...(priorDiscovery === undefined ? {} : { priorDiscovery }),
       ...(answers === undefined ? {} : { answers }),

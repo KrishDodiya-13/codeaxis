@@ -215,6 +215,30 @@ export class ModelTimeoutError extends Error {
   }
 }
 
+/**
+ * Thrown when the account's allowance is spent, rather than momentarily saturated.
+ *
+ * Kept apart from `ModelRequestError` because the remedy is completely different: a
+ * per-minute rate limit clears by waiting seconds, so retrying is right; a daily or
+ * monthly quota does not, so retrying only burns time and adds load. Callers can tell
+ * the two apart and say something useful instead of "try again".
+ */
+export class QuotaExceededError extends Error {
+  readonly section: BrandStateSection;
+  /** When the provider says the allowance resets, if it said.  */
+  readonly retryAfter: string | undefined;
+
+  constructor(section: BrandStateSection, detail: string, retryAfter?: string) {
+    super(
+      `The ${section} call was refused: the model API allowance is exhausted. ${detail}` +
+        (retryAfter === undefined ? '' : ` Resets in ${retryAfter}.`),
+    );
+    this.name = 'QuotaExceededError';
+    this.section = section;
+    this.retryAfter = retryAfter;
+  }
+}
+
 /** Thrown for any other API failure — rate limit, server error, network. */
 export class ModelRequestError extends Error {
   readonly status: number | undefined;
@@ -313,6 +337,19 @@ function describe(error: unknown): string {
   return parts.join(' <- ');
 }
 
+/**
+ * Whether the message describes an exhausted allowance rather than a momentary limit.
+ *
+ * Per-minute limits are excluded deliberately: those are the ones worth retrying, and
+ * treating them as fatal would make the pipeline give up on a wait of a few seconds.
+ */
+export function isQuotaExhausted(message: string): boolean {
+  if (/tokens per minute|requests per minute|TPM|RPM/i.test(message)) return false;
+  return /quota exceeded|tokens per day|requests per day|TPD|RPD|insufficient_quota|billing/i.test(
+    message,
+  );
+}
+
 /** Classifies an SDK error into one of the distinguishable failures. */
 function classify(section: BrandStateSection, error: unknown, timeoutMs: number): Error {
   if (error instanceof DOMException && error.name === 'AbortError') {
@@ -347,14 +384,100 @@ function classify(section: BrandStateSection, error: unknown, timeoutMs: number)
     return new InvalidCredentialError(message);
   }
 
+  // A spent allowance, as opposed to a momentary rate limit. Matched on the provider's
+  // own wording — a per-day or per-month budget, or an explicit "quota exceeded" — so it
+  // is never retried the way a per-minute limit is.
+  if (isQuotaExhausted(message)) {
+    const retryAfter = /try again in ([0-9hms.]+)/i.exec(message)?.[1];
+    return new QuotaExceededError(section, message, retryAfter);
+  }
+
   return new ModelRequestError(section, message, status);
+}
+
+/**
+ * Default per-call output cap.
+ *
+ * Sized for one section, not for the largest conceivable response. Providers count the
+ * *requested* completion cap against a per-minute token budget, so an inflated cap makes
+ * a request that would have fit be refused as too large before the model writes a word.
+ * A section that genuinely needs more can raise it per call.
+ */
+export const DEFAULT_MAX_TOKENS = 4000;
+
+/** The smallest cap worth retrying at; below this a section cannot complete. */
+const MIN_MAX_TOKENS = 1200;
+
+/** Headroom left under a provider's stated limit, for estimate drift. */
+const BUDGET_MARGIN_TOKENS = 250;
+
+/**
+ * A smaller output cap that should fit, given what the provider said.
+ *
+ * Providers that refuse a request for size usually say by how much — "Limit 8000,
+ * Requested 10978". Subtracting the actual overshoot lands on a cap that fits on the
+ * next attempt, where halving blindly tends to overshoot downward and truncate the
+ * response instead. Halving is the fallback when the numbers are not in the message.
+ */
+export function reduceCap(cap: number, message: string): number {
+  const limit = /Limit (\d+)/i.exec(message);
+  const requested = /Requested (\d+)/i.exec(message);
+
+  if (limit !== null && requested !== null) {
+    const overshoot = Number(requested[1]) - Number(limit[1]);
+    if (overshoot > 0) {
+      return Math.max(MIN_MAX_TOKENS, cap - overshoot - BUDGET_MARGIN_TOKENS);
+    }
+  }
+
+  return Math.max(MIN_MAX_TOKENS, Math.floor(cap / 2));
+}
+
+/**
+ * Whether a failure means "this request is too big", as opposed to "it is wrong".
+ *
+ * Providers express it differently — a 413, or a 429 whose body talks about token size
+ * rather than request count — so both are matched.
+ */
+export function isRequestTooLargeError(error: unknown): boolean {
+  if (!(error instanceof ModelRequestError)) return false;
+  if (error.status === 413) return true;
+  return (
+    error.status === 429 &&
+    /token|too large|context length|reduce your message/i.test(error.message)
+  );
+}
+
+/** The largest cap worth trying, so a runaway section cannot spend without bound. */
+const MAX_MAX_TOKENS = 12000;
+
+/**
+ * Whether a failure means "the answer did not fit in the cap".
+ *
+ * The provider reports this as a schema failure rather than a size one, because what it
+ * actually sees is truncated JSON. Telling it apart from a genuinely malformed response
+ * matters: this one is fixed by asking for more room, that one is not.
+ */
+export function isTruncatedError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (/max completion tokens reached|hit the \d+-token cap|was cut off/i.test(error.message)) {
+    return true;
+  }
+  // A schema failure with nothing in `failed_generation` means the model produced no
+  // usable text at all, which is the same remedy — more room — rather than a malformed
+  // answer that more room would not fix. A non-empty failed_generation is excluded,
+  // because that is a genuine schema mismatch.
+  return /json_validate_failed/i.test(error.message) && /"failed_generation":\s*""/.test(error.message);
 }
 
 /** Statuses that mean "the model is busy", not "the request is wrong". */
 const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 /** Total attempts per call, including the first. */
-const TRANSIENT_ATTEMPTS = 4;
+const TRANSIENT_ATTEMPTS = 6;
+
+/** How many times the output cap may be adjusted within one call. */
+const MAX_CAP_ADJUSTMENTS = 3;
 
 /** First backoff; doubles per attempt (1s, 2s, 4s). */
 const TRANSIENT_BACKOFF_MS = 1000;
@@ -379,7 +502,7 @@ export class BrandClient {
       options.client ?? new Groq({ apiKey: (process.env[CREDENTIAL_ENV_VAR] ?? '').trim() });
     this.model = resolveModel(options.model);
     this.effort = options.effort ?? 'high';
-    this.maxTokens = options.maxTokens ?? 16000;
+    this.maxTokens = options.maxTokens ?? DEFAULT_MAX_TOKENS;
     this.timeoutMs = options.timeoutMs ?? 180_000;
   }
 
@@ -404,6 +527,14 @@ export class BrandClient {
       // an unknown model, a refusal — fails on the first attempt, because retrying it
       // would only delay the same error.
       let lastError: unknown;
+      // Lowered when the provider refuses the request for size. The requested cap counts
+      // against a per-minute budget, so asking for less can make an otherwise identical
+      // request fit — which beats failing the stage outright.
+      let cap = this.maxTokens;
+      // The lowest cap the provider has already refused as too large. Raising is never
+      // allowed to reach it, which is what stops a raise/reduce oscillation.
+      let refusedAt = Number.POSITIVE_INFINITY;
+      let adjustments = 0;
       for (let attempt = 0; attempt < TRANSIENT_ATTEMPTS; attempt++) {
         try {
           return await this.client.chat.completions.create(
@@ -432,13 +563,41 @@ export class BrandClient {
                   schema: toGroqSchema(schema) as Record<string, unknown>,
                 },
               },
-              max_completion_tokens: this.maxTokens,
+              max_completion_tokens: cap,
               reasoning_effort: REASONING_EFFORT[this.effort],
             },
             { signal: AbortSignal.timeout(this.timeoutMs) },
           );
         } catch (error) {
           lastError = classify(section, error, this.timeoutMs);
+
+          // Too large: shrink the requested cap and try again immediately. No backoff —
+          // nothing is busy, the ask was simply bigger than the budget allows.
+          // Two opposite adjustments, both bounded, so the cap converges on a value
+          // that fits the budget and still holds a whole section.
+          if (adjustments < MAX_CAP_ADJUSTMENTS) {
+            if (isRequestTooLargeError(lastError) && cap > MIN_MAX_TOKENS) {
+              const reduced = reduceCap(cap, (lastError as Error).message);
+              if (reduced < cap) {
+                refusedAt = Math.min(refusedAt, cap);
+                cap = reduced;
+                adjustments++;
+                continue;
+              }
+            }
+
+            if (isTruncatedError(lastError)) {
+              // Doubling, but never up to a cap already known to be refused.
+              const ceiling = Math.min(MAX_MAX_TOKENS, refusedAt - BUDGET_MARGIN_TOKENS);
+              const raised = Math.min(ceiling, cap * 2);
+              if (raised > cap) {
+                cap = raised;
+                adjustments++;
+                continue;
+              }
+            }
+          }
+
           const retryable =
             lastError instanceof ModelRequestError &&
             lastError.status !== undefined &&

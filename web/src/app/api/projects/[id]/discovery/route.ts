@@ -10,11 +10,12 @@
  * produces no brand language at all.
  */
 import { discover, isDiscoverySufficient, toDiscoverySection } from 'brandstate';
-import { applyDelta, BrandClient } from 'brandstate';
+import { applyDelta } from 'brandstate';
 import type { DiscoverResult } from 'brandstate';
 import { RunDiscoveryBody } from '@/lib/api/contracts';
 import type { RunDiscoveryResponse } from '@/lib/api/contracts';
 import { handle, ok, parseBody, requireModelCredentials } from '@/lib/api/respond';
+import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
   getProject,
@@ -43,7 +44,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     // from what the state kept.
     const priorDiscovery = body.answers === undefined ? undefined : priorFrom(state);
 
-    const result = await discover(new BrandClient(), {
+    const result = await discover(deriverFor(state), {
       idea,
       ...(priorDiscovery === undefined ? {} : { priorDiscovery }),
       ...(body.answers === undefined ? {} : { answers: body.answers }),

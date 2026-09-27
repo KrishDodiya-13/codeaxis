@@ -435,3 +435,111 @@ describe('compileBrandOs', () => {
     assert.ok(prompt.includes('TRUST'));
   });
 });
+
+describe('the Brand OS carries every section the phase requires', () => {
+  /**
+   * The six sections and their required fields, exactly as the phase specifies them.
+   * Pinned here so a future refactor cannot quietly drop one from the deliverable.
+   */
+  const REQUIRED: Record<string, readonly string[]> = {
+    strategy: [
+      'problem',
+      'audience',
+      'category',
+      'positioning',
+      'valueProposition',
+      'differentiator',
+    ],
+    identity: ['personality', 'principles', 'namingDirection', 'taglineDirection'],
+    visual: ['colorDirection', 'typography', 'imagery', 'shapeLanguage', 'composition', 'avoid'],
+    voice: ['tone', 'messagingHierarchy', 'examples'],
+    launch: ['onelinePitch', 'landingHeadline', 'launchMessage'],
+    validation: [
+      'stressTestFindings',
+      'consistencyFindings',
+      'remainingRisks',
+      'recommendations',
+    ],
+  };
+
+  it('has every required field on every required section', () => {
+    const os = assembleBrandOs(completeState(), brandOsDraft);
+
+    for (const [section, fields] of Object.entries(REQUIRED)) {
+      const value = (os as Record<string, any>)[section];
+      assert.ok(value !== undefined, `missing section: ${section}`);
+      for (const field of fields) {
+        assert.ok(field in value, `${section}.${field} is missing from the Brand OS`);
+        assert.notEqual(value[field], undefined, `${section}.${field} is undefined`);
+      }
+    }
+  });
+
+  it('copies the approved decisions rather than restating them', () => {
+    const state = completeState();
+    const os = assembleBrandOs(state, brandOsDraft);
+
+    // Each of these is a decision the user approved earlier. The deliverable must be
+    // byte-identical to the state, or the Brand OS is a second opinion rather than a
+    // rendering of the one that was signed off.
+    assert.equal(os.strategy.problem, state.discovery.problem);
+    assert.equal(os.strategy.audience, state.discovery.targetAudience);
+    assert.equal(os.strategy.category, state.positioning.category);
+    assert.equal(os.strategy.valueProposition, state.positioning.valueProposition);
+    assert.equal(os.strategy.differentiator, state.positioning.differentiator);
+    assert.deepEqual(os.identity.personality, state.personality.traits);
+    assert.deepEqual(os.identity.principles, state.personality.values);
+    assert.equal(os.identity.namingDirection.selectedName, state.naming.selectedName);
+    assert.equal(os.identity.taglineDirection.selected, state.naming.tagline.selected);
+    assert.deepEqual(os.visual.colorDirection, state.visualDirection.colors);
+    assert.equal(os.visual.typography, state.visualDirection.typography);
+    assert.equal(os.visual.shapeLanguage, state.visualDirection.shapes);
+    assert.equal(os.visual.composition, state.visualDirection.composition);
+    assert.deepEqual(os.visual.avoid, state.visualDirection.avoid);
+    assert.deepEqual(os.voice.tone, state.voice.toneAttributes);
+    assert.deepEqual(os.voice.messagingHierarchy, state.voice.messagingHierarchy);
+  });
+
+  it('reports both checks in validation, not just the stress test', () => {
+    const state = completeState();
+    const os = assembleBrandOs(state, brandOsDraft);
+
+    assert.deepEqual(os.validation.stressTestFindings, state.stressTests);
+    assert.deepEqual(os.validation.consistencyFindings, state.consistency.findings);
+    // The fixture has an open consistency finding, so it must surface as a risk with a
+    // recommendation rather than being counted and dropped.
+    assert.ok(os.validation.remainingRisks.length > 0);
+    assert.ok(os.validation.recommendations.length > 0);
+  });
+
+  it('compiles a brand whose checks came back clean, treating empty as good', () => {
+    const state = completeState();
+    // Every stress finding resolved, and consistency agreed. `stressTests` keeps its
+    // entries because an empty array cannot be told apart from never having run.
+    state.stressTests = state.stressTests.map((finding) => ({ ...finding, status: 'resolved' }));
+    state.consistency = {
+      status: 'consistent',
+      findings: [],
+      dimensionsChecked: [{ dimension: 'voice', status: 'evaluated' }],
+    };
+
+    const os = assembleBrandOs(state, brandOsDraft);
+
+    assert.deepEqual(os.validation.consistencyFindings, []);
+    assert.deepEqual(os.validation.remainingRisks, [], 'nothing open means no risks');
+    assert.deepEqual(os.validation.recommendations, []);
+    // The point: empty is not "missing", so compiling must not raise.
+    assert.deepEqual(findEmptyFields(os), []);
+  });
+
+  it('blocks compiling when the stress test never ran, and says what to do', () => {
+    const state = completeState();
+    state.stressTests = [];
+
+    assert.throws(
+      () => assembleBrandOs(state, brandOsDraft),
+      /stress-test/,
+      'the error should name the endpoint to run',
+    );
+  });
+});

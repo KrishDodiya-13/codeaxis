@@ -5,10 +5,11 @@
  * `forceProceed` — in which case every question it had to assume an answer to comes back
  * named in `assumptionsUsed`. Proceeding is allowed; proceeding silently is not.
  */
-import { applyDelta, BrandClient, position, toPositioningSection } from 'brandstate';
+import { applyDelta, position, toPositioningSection } from 'brandstate';
 import { RunPositionBody } from '@/lib/api/contracts';
 import type { RunPositionResponse } from '@/lib/api/contracts';
 import { handle, ok, parseBody, requireModelCredentials } from '@/lib/api/respond';
+import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
   loadBrandState,
@@ -27,7 +28,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     // Throws DiscoveryIncompleteError when discovery is unfinished and forceProceed was
     // not set; the handler turns that into a 422 carrying the unresolved questions.
-    const result = await position(new BrandClient(), {
+    const result = await position(deriverFor(state), {
       discovery: state.discovery,
       ...(body.knownCompetitors === undefined ? {} : { knownCompetitors: body.knownCompetitors }),
       ...(body.forceProceed === undefined ? {} : { forceProceed: body.forceProceed }),

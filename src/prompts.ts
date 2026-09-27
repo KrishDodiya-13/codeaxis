@@ -614,6 +614,36 @@ export type CollisionReason = {
  * with and on which axis. Regenerating the whole batch would throw away work that
  * passed, and a vague "make them more different" tends to produce cosmetic edits.
  */
+/**
+ * Asks for one direction at a time.
+ *
+ * Used when the provider refuses the batch request for size: three full strategies in
+ * one response can exceed a per-request token budget, and one at a time fits. The
+ * already-generated strategies are passed in so each new one still has something
+ * concrete to differ from, which is what the batch call got for free by seeing all
+ * three at once.
+ */
+export function buildSingleStrategyPrompt(
+  original: string,
+  direction: string,
+  otherStrategies: string | undefined,
+): string {
+  const parts = [
+    original,
+    `Return only the ${direction} strategy, with its direction field set to ${direction}. Do not return the others.`,
+  ];
+
+  if (otherStrategies !== undefined) {
+    parts.push(`These strategies have already been written and are staying as they are. Yours must not overlap with them — and do not differ by saying less, because a vaguer strategy is not a more distinct one.
+
+<other_strategies>
+${otherStrategies}
+</other_strategies>`);
+  }
+
+  return parts.join('\n\n');
+}
+
 export function buildStrategyRetryPrompt(
   original: string,
   reason: CollisionReason,
@@ -661,6 +691,14 @@ Everything already in the state — the positioning, the name, the tagline, the 
 **logoDirection.** A direction a designer could act on: what form it takes, what it should evoke, what to avoid. Not a description of a finished logo. It has to follow from the visual direction and the personality that are already set.
 
 **sampleCopy.** A hero headline and a boilerplate paragraph, written *in the brand voice* — obeying its writing principles and, especially, its avoid list. This is the worked example every other writer will copy, so a cliché here propagates.
+
+**launch copy — onelinePitch, landingHeadline, launchMessage.** Three pieces of customer-facing copy, and the three most likely to be read by a stranger before anything else. All in the brand voice, obeying the writing principles and the avoid list.
+
+- onelinePitch: the brand in one sentence, as the founder would say it aloud. What it is, for whom, why it differs. A sentence that explains, not a tagline.
+- landingHeadline: the top of the landing page. Short, concrete, about the problem the reader has rather than how clever the product is.
+- launchMessage: the announcement, one short paragraph: what is live, who it is for, what to do next.
+
+Derive all three from the positioning and the messaging hierarchy that are already decided. Do not invent a new claim here — if the pitch says something the positioning does not, the positioning is what was approved and the pitch is wrong.
 
 **launch.** The go-to-market plan, which nothing earlier in the pipeline produced. The constraints in discovery bind it: do not propose a paid acquisition campaign for a brand whose constraints say it is sold founder-to-founder, and do not assume a budget or a team the state never mentioned. Channels come with a clause on why each fits this audience. The rollout is ordered milestones, earliest first, named as outcomes rather than activities.
 

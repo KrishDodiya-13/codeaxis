@@ -9,7 +9,7 @@
  * `regenerate: true`. Replacing the options would leave the chosen direction pointing
  * at something that no longer exists, and that has to be a deliberate act.
  */
-import { applyDelta, battle, BrandClient, normalizeDirections } from 'brandstate';
+import { applyDelta, battle, normalizeDirections } from 'brandstate';
 import type { BrandState, SelectedStrategy } from 'brandstate';
 import { RunBattleBody } from '@/lib/api/contracts';
 import type { RunBattleResponse } from '@/lib/api/contracts';
@@ -21,6 +21,7 @@ import {
   parseBody,
   requireModelCredentials,
 } from '@/lib/api/respond';
+import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
   loadBrandState,
@@ -60,7 +61,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const directions =
       body.directions === undefined ? undefined : normalizeDirections(body.directions);
 
-    const result = await battle(new BrandClient(), {
+    const result = await battle(// A regenerate asks for a different answer, so it must not be served the previous one.
+      deriverFor(state, { cache: body.regenerate !== true }), {
       discovery: state.discovery,
       positioning: state.positioning,
       count: DIRECTION_COUNT,

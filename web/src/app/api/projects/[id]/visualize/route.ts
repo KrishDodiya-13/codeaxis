@@ -7,7 +7,7 @@
  * returns has to trace back to one of those, which is what the prompt enforces and what
  * the `visualPersonality` and `rationale` fields record.
  */
-import { BrandClient, runStep } from 'brandstate';
+import { runStep } from 'brandstate';
 import { RunVisualizeBody } from '@/lib/api/contracts';
 import type { RunVisualizeResponse } from '@/lib/api/contracts';
 import {
@@ -18,6 +18,7 @@ import {
   parseBody,
   requireModelCredentials,
 } from '@/lib/api/respond';
+import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
   loadBrandState,
@@ -65,7 +66,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     // runStep enforces the declared dependencies and sends the chosen strategy resolved,
     // with the rejected directions omitted, so the brief cannot express one nobody picked.
-    const result = await runStep(new BrandClient(), state, 'visualDirection');
+    const result = await runStep(// A regenerate asks for a different answer, so it must not be served the previous one.
+      deriverFor(state, { cache: body.regenerate !== true }), state, 'visualDirection');
     const saved = await saveBrandState(id, result.state);
     const project = await advanceStatus(id, 'STRATEGY');
 

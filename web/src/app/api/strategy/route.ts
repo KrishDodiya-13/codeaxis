@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
-  BrandClient,
   BrandStateFileSchema,
   applyDelta,
   buildBrandDna,
@@ -17,6 +16,7 @@ import { DiscoverResultSchema } from '@/lib/discovery'
 import { credentialProblem } from '@/lib/api/credentials'
 import { errorResponse, modelErrorResponse } from '@/lib/api/model-errors'
 import { STAGES, STAGE_LABELS } from '@/lib/strategy'
+import { deriverFor } from '@/lib/ai/deriver'
 
 /*
  * POST /api/strategy — run one strategy stage, or recompute the Brand DNA.
@@ -120,7 +120,7 @@ export async function POST(request: Request) {
   if (credentialIssue !== null) return errorResponse(503, credentialIssue)
 
   try {
-    const result = await runStep(new BrandClient(), state, stage)
+    const result = await runStep(deriverFor(state), state, stage)
     return NextResponse.json({ state: result.state, dna: buildBrandDna(result.state) })
   } catch (e) {
     return modelErrorResponse(e, STAGE_LABELS[stage])

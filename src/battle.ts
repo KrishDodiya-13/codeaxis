@@ -23,9 +23,13 @@ import {
   overlapRatio,
 } from './archetypes.ts';
 import type { Direction } from './archetypes.ts';
-import { EMPTY_USAGE, addUsage } from './client.ts';
+import { EMPTY_USAGE, addUsage, isRequestTooLargeError } from './client.ts';
 import type { DeriveOptions, SectionDeriver, Usage } from './client.ts';
-import { buildBattlePrompt, buildStrategyRetryPrompt } from './prompts.ts';
+import {
+  buildBattlePrompt,
+  buildSingleStrategyPrompt,
+  buildStrategyRetryPrompt,
+} from './prompts.ts';
 import type { CollisionReason } from './prompts.ts';
 import {
   BattleResultSchema,
@@ -342,12 +346,41 @@ export async function battle(
     })),
   });
 
-  const first = await deriver.deriveSection('strategyOptions', '', BattleResultSchema, {
-    userPrompt: basePrompt,
-  } satisfies DeriveOptions);
+  let usage = EMPTY_USAGE;
+  let strategies: StrategyCandidate[];
 
-  let usage = first.usage;
-  let strategies = [...first.value.strategies];
+  try {
+    const first = await deriver.deriveSection('strategyOptions', '', BattleResultSchema, {
+      userPrompt: basePrompt,
+    } satisfies DeriveOptions);
+    usage = addUsage(usage, first.usage);
+    strategies = [...first.value.strategies];
+  } catch (error) {
+    // Three full strategies in one response can exceed a provider's per-request token
+    // budget. That is a size problem, not a bad request, so it falls back to one
+    // direction per call rather than failing the stage. Anything else rethrows.
+    if (!isRequestTooLargeError(error)) throw error;
+
+    strategies = [];
+    for (const direction of directions) {
+      const single = await deriver.deriveSection(
+        'strategyOptions',
+        '',
+        StrategyRegenerationSchema,
+        {
+          userPrompt: buildSingleStrategyPrompt(
+            basePrompt,
+            direction,
+            strategies.length === 0
+              ? undefined
+              : stableStringify(strategies.map(toStrategyOption), 2),
+          ),
+        } satisfies DeriveOptions,
+      );
+      usage = addUsage(usage, single.usage);
+      strategies.push(single.value.strategy);
+    }
+  }
 
   // Rebuild only what collided, one strategy at a time, each told what it hit.
   for (let round = 0; round < maxRebuilds; round++) {

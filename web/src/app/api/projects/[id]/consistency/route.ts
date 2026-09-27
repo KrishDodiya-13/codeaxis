@@ -13,11 +13,12 @@
  * A scoped run replaces only the findings involving the parts it covered, so a decision
  * already recorded against another part survives a narrow re-check.
  */
-import { BrandClient, checkConsistency } from 'brandstate';
+import { checkConsistency } from 'brandstate';
 import { applyDelta } from 'brandstate';
 import { CONSISTENCY_DIMENSION_NAMES, RunConsistencyBody } from '@/lib/api/contracts';
 import type { RunConsistencyResponse } from '@/lib/api/contracts';
 import { handle, ok, parseBody, requireModelCredentials } from '@/lib/api/respond';
+import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
   loadBrandState,
@@ -40,7 +41,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     // No precondition beyond a loadable project: the check reports what it could not
     // compare rather than refusing. An early run over a half-built brand is useful, and
     // `dimensionsChecked` says plainly which parts were not there yet.
-    const result = await checkConsistency(new BrandClient(), {
+    const result = await checkConsistency(deriverFor(state), {
       brandState: state,
       ...(body.scope === undefined ? {} : { scope: body.scope }),
     });

@@ -13,6 +13,7 @@
 import { z } from 'zod';
 import type {
   BrandDna,
+  BrandOs,
   BrandState,
   Consistency,
   ConsistencyDimension,
@@ -370,6 +371,35 @@ export type RunConsistencyResponse = {
   project: ProjectSummary;
 };
 
+/* ------------------------------------------------------------------ *
+ * POST /api/projects/:id/brand-os
+ * ------------------------------------------------------------------ */
+
+export const CompileBrandOsBody = z
+  .object({
+    /**
+     * Compile despite open critical or high stress findings.
+     *
+     * The result comes back marked `not-ready`, with the offending findings in
+     * `openFlags`, so a draft can never be mistaken for a signed-off deliverable.
+     */
+    allowUnvalidated: z.boolean().optional(),
+    /** Also lock the brand, writing `finalBrand`. Off by default: locking is its own act. */
+    lock: z.boolean().optional(),
+  })
+  .strict();
+
+export type CompileBrandOsRequest = z.infer<typeof CompileBrandOsBody>;
+
+export type CompileBrandOsResponse = {
+  brandId: string;
+  /** The six sections: strategy, identity, visual, voice, launch, validation. */
+  brandOS: BrandOs;
+  /** True when the brand was also locked on this call. */
+  locked: boolean;
+  project: ProjectSummary;
+};
+
 export const API_ERROR_CODES = [
   'invalid_request',
   'not_found',
@@ -378,6 +408,8 @@ export const API_ERROR_CODES = [
   'positioning_not_ready',
   'battle_not_run',
   'stress_test_not_ready',
+  'brand_state_incomplete',
+  'brand_os_incomplete',
   'findings_unauditable',
   'consistency_findings_uncheckable',
   'strategy_not_selected',
@@ -390,6 +422,8 @@ export const API_ERROR_CODES = [
   'model_key_invalid',
   'model_timeout',
   'model_unavailable',
+  'quota_exhausted',
+  'mock_fixture_invalid',
   'upstream_unavailable',
   'database_unavailable',
   'database_not_migrated',

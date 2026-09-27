@@ -78,6 +78,33 @@ export class DiscoveryIncompleteError extends Error {
 }
 
 /** Thrown when the model could not produce a specific enough category. */
+/**
+ * Thrown when discovery has no content to position against.
+ *
+ * Separate from `DiscoveryIncompleteError`, which means "there are unanswered questions"
+ * and can be overridden with `forceProceed`. This one cannot be overridden: there is
+ * nothing to work from, so any positioning would be invented rather than derived.
+ */
+export class DiscoveryEmptyError extends Error {
+  readonly empty: string[];
+
+  constructor(empty: string[]) {
+    super(
+      `Discovery has not been run: ${empty.join(', ')} ${empty.length === 1 ? 'is' : 'are'} empty. ` +
+        'Run POST /api/projects/:id/discovery first. Positioning against an empty discovery ' +
+        'would mean inventing the product.',
+    );
+    this.name = 'DiscoveryEmptyError';
+    this.empty = empty;
+  }
+}
+
+/** The discovery fields positioning cannot work without, when blank. */
+export function emptyDiscoveryFields(discovery: Discovery): string[] {
+  const required = ['problem', 'targetAudience', 'userNeed'] as const;
+  return required.filter((field) => (discovery[field] ?? '').trim() === '');
+}
+
 export class VagueCategoryError extends Error {
   readonly category: string;
   readonly unrelatedProducts: string[];
@@ -274,6 +301,13 @@ export async function position(
 ): Promise<{ value: PositionResponse; usage: Usage }> {
   const { discovery, forceProceed = false, includeAlternatives = false } = request;
   const maxAttempts = Math.max(1, options.maxCategoryAttempts ?? 2);
+
+  // Checked before forceProceed, and regardless of it. `forceProceed` means "position on
+  // assumed answers to the open questions" — it does not mean "position on nothing".
+  // Without this, a failed or never-run discovery leaves the fields blank and the model
+  // invents a product to position, which is the one thing the methodology forbids.
+  const blank = emptyDiscoveryFields(discovery);
+  if (blank.length > 0) throw new DiscoveryEmptyError(blank);
 
   if (!isDiscoveryReadyToPosition(discovery) && !forceProceed) {
     throw new DiscoveryIncompleteError([...discovery.openQuestions]);

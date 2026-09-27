@@ -9,11 +9,12 @@
  * recorded against another type — an accepted trade-off in particular — survives a
  * re-check of one test.
  */
-import { BrandClient, blockingFindings, stressTest } from 'brandstate';
+import { blockingFindings, stressTest } from 'brandstate';
 import { applyDelta, resolveSelectedStrategy } from 'brandstate';
 import { RunStressTestBody, TEST_TYPE_NAMES } from '@/lib/api/contracts';
 import type { RunStressTestResponse } from '@/lib/api/contracts';
 import { BadRequestError, handle, ok, parseBody, requireModelCredentials } from '@/lib/api/respond';
+import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
   loadBrandState,
@@ -41,7 +42,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       );
     }
 
-    const result = await stressTest(new BrandClient(), {
+    const result = await stressTest(deriverFor(state), {
       selectedStrategy,
       brandState: state,
       ...(body.scope === undefined ? {} : { scope: body.scope }),

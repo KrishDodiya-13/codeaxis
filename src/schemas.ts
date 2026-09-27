@@ -927,6 +927,15 @@ export const BrandOsDraftSchema = strictObject({
     })
     .describe('Copy written in the brand voice, as a worked example for whoever writes the rest.'),
   launch:strictObject({
+      onelinePitch: text(
+        'The brand in one sentence, as the founder would say it out loud. What it is, for whom, and why it is different — in the brand voice, obeying its avoid list. Not a tagline: a sentence that explains.',
+      ),
+      landingHeadline: text(
+        'The headline at the top of the landing page. Short, concrete, and about the problem the reader has rather than how clever the product is. Must obey the voice principles and the avoid list.',
+      ),
+      launchMessage: text(
+        'The announcement post, in one short paragraph: what is live, who it is for, and what to do next. Written in the brand voice. Must respect the constraints recorded in discovery.',
+      ),
       goToMarketSummary: text(
         'How this brand reaches its first users, in a short paragraph. Must respect the constraints recorded in discovery — do not propose a paid campaign for a brand whose constraints say it is sold founder-to-founder.',
       ),
@@ -952,6 +961,12 @@ export const ReadinessCheckSchema = strictObject({
 
 export const BrandOsSchema = strictObject({
   strategy: strictObject({
+    problem: text(),
+    audience: text(),
+    category: text(),
+    positioning: text(),
+    valueProposition: text(),
+    differentiator: text(),
     purpose: text(),
     mission: text(),
     vision: text(),
@@ -963,28 +978,58 @@ export const BrandOsSchema = strictObject({
   identity: strictObject({
     name: text(),
     nameRationale: text(),
+    personality: z.array(text()).min(1),
+    principles: z.array(text()).min(1),
+    namingDirection: strictObject({
+      territories: z.array(text()).min(1),
+      selectedName: text(),
+      rationale: text(),
+    }),
+    taglineDirection: strictObject({
+      selected: text(),
+      alternatives: z.array(text()),
+    }),
     coreValues: z.array(text()).min(1),
     personalityTraits: z.array(text()).min(1),
     archetype: text(),
   }),
   visual: strictObject({
+    colorDirection: z.array(text()).min(1),
+    typography: text(),
+    imagery: text(),
+    shapeLanguage: text(),
+    composition: text(),
+    avoid: z.array(text()),
     logoDirection: text(),
     colorPalette: z.array(text()).min(1),
     typographySystem: text(),
     imageryStyle: text(),
   }),
   voice: strictObject({
+    tone: z.array(text()).min(1),
+    messagingHierarchy: strictObject({
+      primaryMessage: text(),
+      supportingMessages: z.array(text()),
+    }),
+    examples: strictObject({ headline: text(), boilerplate: text() }),
     toneGuidelines: z.array(text()).min(1),
     messagingPillars: z.array(text()).min(1),
     taglines: z.array(text()).min(1),
     sampleCopy: strictObject({ headline: text(), boilerplate: text() }),
   }),
   launch: strictObject({
+    onelinePitch: text(),
+    landingHeadline: text(),
+    launchMessage: text(),
     goToMarketSummary: text(),
     keyChannels: z.array(text()).min(1),
     rolloutSequence: z.array(RolloutMilestoneSchema).min(1),
   }),
   validation: strictObject({
+    stressTestFindings: z.array(StressTestSchema),
+    consistencyFindings: z.array(ConsistencyFindingSchema),
+    remainingRisks: z.array(text()),
+    recommendations: z.array(text()),
     stressTestSummary: strictObject({
       critical: z.number(),
       high: z.number(),
