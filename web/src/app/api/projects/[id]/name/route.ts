@@ -13,6 +13,7 @@ import { applyDelta, selectName } from 'brandstate';
 import { SelectNameBody } from '@/lib/api/contracts';
 import type { SelectNameResponse } from '@/lib/api/contracts';
 import { BadRequestError, handle, ok, parseBody } from '@/lib/api/respond';
+import { requireUser } from '@/lib/auth/session';
 import { loadBrandState, saveBrandState, toProjectSummary, getProject } from '@/lib/db/projects';
 
 export const runtime = 'nodejs';
@@ -20,9 +21,10 @@ export const runtime = 'nodejs';
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return handle<SelectNameResponse>(async () => {
     const { id } = await context.params;
+    const user = await requireUser();
     const body = await parseBody(request, SelectNameBody);
 
-    const state = await loadBrandState(id);
+    const state = await loadBrandState(id, user.id);
 
     if (state.naming.candidates.length === 0) {
       throw new BadRequestError(
@@ -34,11 +36,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     // Throws NameNotOfferedError if the pick was not on offer, which the error handler
     // turns into a 400 listing what was.
     const naming = selectName(state.naming, { name: body.name, tagline: body.tagline });
-    const saved = await saveBrandState(id, applyDelta(state, 'naming', naming));
+    const saved = await saveBrandState(id, user.id, applyDelta(state, 'naming', naming));
 
     return ok({
       naming: saved.naming,
-      project: toProjectSummary(await getProject(id)),
+      project: toProjectSummary(await getProject(id, user.id)),
     });
   });
 }

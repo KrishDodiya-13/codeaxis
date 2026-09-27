@@ -1,6 +1,8 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { signIn } from 'next-auth/react'
 import { useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import HoverLetters from '@/components/hover-letters'
@@ -29,9 +31,9 @@ const COPY: Record<
   },
 }
 
-// There is no auth backend yet (ARCHITECTURE.md keeps auth out of the MVP),
-// so the form says so instead of pretending to sign anyone in.
-const NOT_CONNECTED = "Accounts aren't connected yet, so nothing was sent."
+/** Where to land after signing in when nothing else was asked for. */
+const AFTER_SIGN_IN = '/new'
+
 
 // Text turns green on hover; the boxes themselves do not.
 const hoverText = 'transition-colors hover:text-poster-green'
@@ -52,13 +54,79 @@ function GoogleIcon() {
   )
 }
 
-export default function AuthForm({ mode }: { mode: Mode }) {
+export default function AuthForm({
+  mode,
+  googleEnabled,
+  /** Where to return after signing in. Already validated by the page. */
+  callbackUrl,
+}: {
+  mode: Mode
+  googleEnabled: boolean
+  callbackUrl?: string
+}) {
   const copy = COPY[mode]
+  const destination = callbackUrl ?? AFTER_SIGN_IN
+  const router = useRouter()
   const [notice, setNotice] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    setNotice(NOT_CONNECTED)
+    if (busy) return
+
+    const form = new FormData(e.currentTarget)
+    const email = String(form.get('email') ?? '')
+    const password = String(form.get('password') ?? '')
+    const name = String(form.get('name') ?? '')
+
+    setBusy(true)
+    setNotice(null)
+
+    try {
+      if (mode === 'signup') {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, ...(name === '' ? {} : { name }) }),
+        })
+
+        if (!res.ok) {
+          const data: unknown = await res.json().catch(() => null)
+          const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+          setNotice(typeof record.error === 'string' ? record.error : 'Could not create the account.')
+          return
+        }
+      }
+
+      // One path issues the session, for both modes: the credentials sign-in endpoint.
+      const result = await signIn('credentials', { email, password, redirect: false })
+
+      if (result?.error !== undefined && result.error !== null) {
+        // Deliberately not specific about which half was wrong.
+        setNotice('That email and password do not match an account.')
+        return
+      }
+
+      router.push(destination)
+    } catch {
+      setNotice('Something went wrong. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onGoogle = async () => {
+    if (busy) return
+    setBusy(true)
+    setNotice(null)
+    try {
+      // Server-side redirect flow: the browser never sees the client secret, and the
+      // state/PKCE values are set and checked by the Auth.js route.
+      await signIn('google', { callbackUrl: destination })
+    } catch {
+      setNotice('Could not reach Google. Try again.')
+      setBusy(false)
+    }
   }
 
   return (
@@ -68,20 +136,26 @@ export default function AuthForm({ mode }: { mode: Mode }) {
       </h1>
       <p className={`mt-3 text-sm font-semibold text-poster-ink/60 ${hoverText}`}>{copy.subtitle}</p>
 
-      <Button
-        type="button"
-        onClick={() => setNotice(NOT_CONNECTED)}
-        className="group mt-8 h-12 w-full rounded-full border-2 border-poster-ink bg-white font-extrabold text-poster-ink shadow-none hover:bg-white focus-visible:ring-4 focus-visible:ring-poster-green/40"
-      >
-        <GoogleIcon />
-        <span className="transition-colors group-hover:text-poster-green">Continue with Google</span>
-      </Button>
+      {/* Hidden rather than broken when Google is not configured on this deployment. */}
+      {googleEnabled && (
+        <>
+          <Button
+            type="button"
+            onClick={onGoogle}
+            disabled={busy}
+            className="group mt-8 h-12 w-full rounded-full border-2 border-poster-ink bg-white font-extrabold text-poster-ink shadow-none hover:bg-white focus-visible:ring-4 focus-visible:ring-poster-green/40 disabled:opacity-60"
+          >
+            <GoogleIcon />
+            <span className="transition-colors group-hover:text-poster-green">Continue with Google</span>
+          </Button>
 
-      <div className="my-6 flex items-center gap-4 text-xs font-extrabold text-poster-ink/40" aria-hidden="true">
-        <span className="h-0.5 flex-1 bg-poster-ink/15" />
-        OR
-        <span className="h-0.5 flex-1 bg-poster-ink/15" />
-      </div>
+          <div className="my-6 flex items-center gap-4 text-xs font-extrabold text-poster-ink/40" aria-hidden="true">
+            <span className="h-0.5 flex-1 bg-poster-ink/15" />
+            OR
+            <span className="h-0.5 flex-1 bg-poster-ink/15" />
+          </div>
+        </>
+      )}
 
       <form onSubmit={onSubmit} className="space-y-5">
         {mode === 'signup' && (
@@ -114,13 +188,12 @@ export default function AuthForm({ mode }: { mode: Mode }) {
               Password
             </label>
             {mode === 'login' && (
-              <button
-                type="button"
-                onClick={() => setNotice(NOT_CONNECTED)}
+              <Link
+                href="/forgot-password"
                 className={`rounded text-xs font-bold text-poster-ink/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-poster-green ${hoverText}`}
               >
                 Forgot?
-              </button>
+              </Link>
             )}
           </div>
           <input
@@ -129,8 +202,8 @@ export default function AuthForm({ mode }: { mode: Mode }) {
             type="password"
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             required
-            minLength={mode === 'signup' ? 8 : undefined}
-            placeholder={mode === 'signup' ? 'At least 8 characters' : '••••••••'}
+            minLength={mode === 'signup' ? 10 : undefined}
+            placeholder={mode === 'signup' ? 'At least 10 characters' : '••••••••'}
             className={inputClass}
           />
         </div>
@@ -138,9 +211,10 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         {/* Same green pill as the landing page's "Start building". */}
         <Button
           type="submit"
-          className="group h-12 w-full rounded-full border-2 border-poster-ink bg-poster-green text-base font-extrabold text-poster-ink shadow-none transition-colors hover:bg-poster-ink hover:text-poster-paper focus-visible:ring-4 focus-visible:ring-poster-green/40"
+          disabled={busy}
+          className="group h-12 w-full rounded-full border-2 border-poster-ink bg-poster-green text-base font-extrabold text-poster-ink shadow-none transition-colors hover:bg-poster-ink hover:text-poster-paper focus-visible:ring-4 focus-visible:ring-poster-green/40 disabled:opacity-60"
         >
-          {copy.submit}
+          {busy ? 'One moment…' : copy.submit}
           <span aria-hidden="true" className="transition-transform group-hover:translate-x-1">
             →
           </span>

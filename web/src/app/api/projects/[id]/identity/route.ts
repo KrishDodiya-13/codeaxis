@@ -18,6 +18,7 @@ import { runStep } from 'brandstate';
 import { RunIdentityBody } from '@/lib/api/contracts';
 import type { RunIdentityResponse } from '@/lib/api/contracts';
 import { BadRequestError, handle, ok, parseBody, requireModelCredentials } from '@/lib/api/respond';
+import { requireUser } from '@/lib/auth/session';
 import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
@@ -32,11 +33,12 @@ export const maxDuration = 300;
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return handle<RunIdentityResponse>(async () => {
     const { id } = await context.params;
+    const user = await requireUser();
     const body = await parseBody(request, RunIdentityBody);
 
     requireModelCredentials();
 
-    let state = await loadBrandState(id);
+    let state = await loadBrandState(id, user.id);
 
     // Replacing an existing identity would orphan the name the user chose from the old
     // candidates, so it has to be deliberate rather than a side effect of a re-request.
@@ -55,10 +57,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     for (const section of ['personality', 'naming', 'voice'] as const) {
       const result = await runStep(deriver, state, section);
       // Saved per stage: a later failure keeps what already succeeded.
-      state = await saveBrandState(id, result.state);
+      state = await saveBrandState(id, user.id, result.state);
     }
 
-    const project = await advanceStatus(id, 'STRATEGY');
+    const project = await advanceStatus(id, user.id, 'STRATEGY');
 
     return ok({
       personality: state.personality,

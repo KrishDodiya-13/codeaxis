@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   DiscoverResultSchema,
@@ -41,6 +42,7 @@ function questionMessage(round: Round): Message | null {
 }
 
 export default function DiscoveryWorkspace({ id }: { id: string }) {
+  const router = useRouter()
   const [project, setProject] = useState<Project | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [thinking, setThinking] = useState<Thinking | null>(null)
@@ -99,6 +101,16 @@ export default function DiscoveryWorkspace({ id }: { id: string }) {
           body: JSON.stringify(request),
         })
         const data: unknown = await res.json().catch(() => null)
+
+        // An expired or revoked session mid-flow. Sending the user to login with a way
+        // back is more useful than an error card they can do nothing about — the page
+        // guard covers arriving logged out, and this covers falling out while here.
+        if (res.status === 401) {
+          const back = `/project/${id}/discover`
+          router.push(`/login?callbackUrl=${encodeURIComponent(back)}`)
+          return
+        }
+
         if (!res.ok) {
           const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
           const message = typeof record.error === 'string' ? record.error : 'Discovery failed.'
@@ -119,7 +131,7 @@ export default function DiscoveryWorkspace({ id }: { id: string }) {
         setThinking(null)
       }
     },
-    [applyResult]
+    [applyResult, id, router]
   )
 
   // First visit: read the idea once. Also resumes a first read that failed last time.

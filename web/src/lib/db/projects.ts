@@ -55,6 +55,8 @@ export function toProjectSummary(project: Project): ProjectSummary {
 
 /** Creates a project and its initial, empty brand state in one transaction. */
 export async function createProject(input: {
+  /** The owner. Required, so a project cannot be created without one. */
+  userId: string;
   idea: string;
   name?: string;
   productType?: string;
@@ -71,6 +73,7 @@ export async function createProject(input: {
   const project = await prisma.project.create({
     data: {
       id: state.id,
+      userId: input.userId,
       name: input.name ?? deriveName(input.idea),
       originalIdea: input.idea,
       productType: input.productType ?? null,
@@ -95,10 +98,20 @@ function deriveName(idea: string): string {
   return words.length > 0 ? words.slice(0, 120) : 'Untitled brand';
 }
 
-export async function getProject(id: string): Promise<Project> {
-  const project = await prisma.project.findUnique({ where: { id } });
+export async function getProject(id: string, userId: string): Promise<Project> {
+  // Scoped in the WHERE clause rather than fetched and then compared. Two reasons: the
+  // database cannot return a row the caller does not own, so there is no window in which
+  // someone else's project exists in memory; and a non-owner gets the same
+  // "not found" as a stranger id, which keeps the API from confirming that a project
+  // exists at all.
+  const project = await prisma.project.findFirst({ where: { id, userId } });
   if (project === null) throw new ProjectNotFoundError(id);
   return project;
+}
+
+/** Every project owned by one user, newest first. */
+export async function listProjects(userId: string): Promise<Project[]> {
+  return prisma.project.findMany({ where: { userId }, orderBy: { updatedAt: 'desc' } });
 }
 
 /**
@@ -107,8 +120,12 @@ export async function getProject(id: string): Promise<Project> {
  * A migration that happens on read is written straight back, so the next read does not
  * repeat it and a migration sweep can find what is still old by `schemaVersion`.
  */
-export async function loadBrandState(projectId: string): Promise<BrandState> {
-  const record = await prisma.brandStateRecord.findUnique({ where: { projectId } });
+export async function loadBrandState(projectId: string, userId: string): Promise<BrandState> {
+  // Ownership is established before the state is read, so a state is never loaded for
+  // somebody else's project even briefly.
+  const record = await prisma.brandStateRecord.findFirst({
+    where: { projectId, project: { userId } },
+  });
   if (record === null) throw new ProjectNotFoundError(projectId);
 
   const raw: unknown = record.state;
@@ -117,7 +134,7 @@ export async function loadBrandState(projectId: string): Promise<BrandState> {
     if (needsMigration(raw)) {
       const migrated = migrateState(raw).state;
       const state = parseBrandState(migrated);
-      await saveBrandState(projectId, state);
+      await saveBrandState(projectId, userId, state);
       return state;
     }
     return parseBrandState(raw);
@@ -132,16 +149,25 @@ export async function loadBrandState(projectId: string): Promise<BrandState> {
  * Validated before it is stored, so an invalid state fails here rather than being
  * discovered on the next read by a different stage.
  */
-export async function saveBrandState(projectId: string, state: BrandState): Promise<BrandState> {
+export async function saveBrandState(
+  projectId: string,
+  userId: string,
+  state: BrandState,
+): Promise<BrandState> {
   const validated = parseBrandState(state);
 
-  await prisma.brandStateRecord.update({
-    where: { projectId },
+  // updateMany, because only it accepts a relation filter — so the ownership condition is
+  // part of the write itself. A write that matches nothing means the caller does not own
+  // the project, which is reported as not-found rather than as a successful no-op.
+  const result = await prisma.brandStateRecord.updateMany({
+    where: { projectId, project: { userId } },
     data: {
       state: validated as unknown as Prisma.InputJsonValue,
       schemaVersion: validated.schemaVersion,
     },
   });
+
+  if (result.count === 0) throw new ProjectNotFoundError(projectId);
 
   return validated;
 }
@@ -152,9 +178,14 @@ export async function saveBrandState(projectId: string, state: BrandState): Prom
  * A stage that is re-run — discovery answered again after positioning — must not drag
  * the project back to an earlier status and make the UI look like work was lost.
  */
-export async function advanceStatus(projectId: string, to: ProjectStatus): Promise<Project> {
+export async function advanceStatus(
+  projectId: string,
+  userId: string,
+  to: ProjectStatus,
+): Promise<Project> {
   const order: ProjectStatus[] = ['DISCOVERY', 'POSITIONING', 'STRATEGY', 'STRESS_TEST', 'COMPLETE'];
-  const project = await getProject(projectId);
+  // Throws when the caller is not the owner, so the update below cannot be reached.
+  const project = await getProject(projectId, userId);
 
   if (order.indexOf(to) <= order.indexOf(project.status)) {
     // Still touch updatedAt, so the UI can tell something happened.

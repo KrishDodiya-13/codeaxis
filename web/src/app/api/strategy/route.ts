@@ -14,6 +14,7 @@ import {
 } from 'brandstate'
 import { DiscoverResultSchema } from '@/lib/discovery'
 import { credentialProblem } from '@/lib/api/credentials'
+import { guardAiRoute } from '@/lib/api/ai-guard'
 import { errorResponse, modelErrorResponse } from '@/lib/api/model-errors'
 import { STAGES, STAGE_LABELS } from '@/lib/strategy'
 import { deriverFor } from '@/lib/ai/deriver'
@@ -87,6 +88,11 @@ function seedState(seed: z.infer<typeof SeedSchema>): BrandState {
 }
 
 export async function POST(request: Request) {
+  // Authentication and the per-user quota limit, before anything is parsed or spent.
+  // Server-side: a frontend check would be advisory.
+  const guard = await guardAiRoute('strategy')
+  if (guard.response !== undefined) return guard.response
+
   let body: unknown
   try {
     body = await request.json()

@@ -19,6 +19,7 @@ import {
 import { credentialProblem } from '@/lib/api/credentials'
 import { errorResponse, modelErrorResponse } from '@/lib/api/model-errors'
 import { deriverFor } from '@/lib/ai/deriver'
+import { guardAiRoute } from '@/lib/api/ai-guard'
 
 /*
  * POST /api/stress-test — try to break the brand.
@@ -48,6 +49,10 @@ function issues(error: z.ZodError) {
 }
 
 export async function POST(request: Request) {
+  // Authentication and the per-user quota limit, before anything is parsed or spent.
+  const guard = await guardAiRoute('stress-test')
+  if (guard.response !== undefined) return guard.response
+
   let body: unknown
   try {
     body = await request.json()

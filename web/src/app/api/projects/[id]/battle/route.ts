@@ -21,6 +21,7 @@ import {
   parseBody,
   requireModelCredentials,
 } from '@/lib/api/respond';
+import { requireUser } from '@/lib/auth/session';
 import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
@@ -35,11 +36,12 @@ const DIRECTION_COUNT = 3;
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return handle<RunBattleResponse>(async () => {
     const { id } = await context.params;
+    const user = await requireUser();
     const body = await parseBody(request, RunBattleBody);
 
     requireModelCredentials();
 
-    const state = await loadBrandState(id);
+    const state = await loadBrandState(id, user.id);
 
     if (state.positioning.category === '') {
       throw new BadRequestError(
@@ -78,8 +80,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       delete next.selectedStrategy;
     }
 
-    await saveBrandState(id, next);
-    const project = await advanceStatus(id, 'STRATEGY');
+    await saveBrandState(id, user.id, next);
+    const project = await advanceStatus(id, user.id, 'STRATEGY');
 
     return ok({
       directions: result.value,

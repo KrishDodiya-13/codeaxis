@@ -39,6 +39,7 @@ import {
 } from 'brandstate';
 import type { ApiErrorBody, ApiErrorCode } from '@/lib/api/contracts';
 import { credentialProblem } from '@/lib/api/credentials';
+import { UnauthenticatedError } from '@/lib/auth/session';
 import { CorruptBrandStateError, ProjectNotFoundError } from '@/lib/db/projects';
 
 export function ok<T>(body: T, status = 200): NextResponse<T> {
@@ -139,6 +140,10 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
   } catch (error) {
     /* ---- the caller's fault ---- */
 
+    if (error instanceof UnauthenticatedError) {
+      // 401, not 403: the caller has no identity at all, so the remedy is to sign in.
+      return fail(401, 'unauthenticated', error.message);
+    }
     if (error instanceof ZodError) {
       return fail(400, 'invalid_request', 'The request body is not valid.', {
         details: zodDetails(error),

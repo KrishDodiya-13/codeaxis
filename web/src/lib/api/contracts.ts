@@ -447,6 +447,7 @@ export type SelectNameResponse = {
 export const API_ERROR_CODES = [
   'invalid_request',
   'not_found',
+  'unauthenticated',
   'method_not_allowed',
   'discovery_incomplete',
   'positioning_not_ready',

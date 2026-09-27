@@ -18,6 +18,7 @@ import {
   parseBody,
   requireModelCredentials,
 } from '@/lib/api/respond';
+import { requireUser } from '@/lib/auth/session';
 import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
@@ -32,11 +33,12 @@ export const maxDuration = 300;
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return handle<RunVisualizeResponse>(async () => {
     const { id } = await context.params;
+    const user = await requireUser();
     const body = await parseBody(request, RunVisualizeBody);
 
     requireModelCredentials();
 
-    const state = await loadBrandState(id);
+    const state = await loadBrandState(id, user.id);
 
     if (state.selectedStrategy === undefined) {
       throw new BadRequestError(
@@ -68,8 +70,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     // with the rejected directions omitted, so the brief cannot express one nobody picked.
     const result = await runStep(// A regenerate asks for a different answer, so it must not be served the previous one.
       deriverFor(state, { cache: body.regenerate !== true }), state, 'visualDirection');
-    const saved = await saveBrandState(id, result.state);
-    const project = await advanceStatus(id, 'STRATEGY');
+    const saved = await saveBrandState(id, user.id, result.state);
+    const project = await advanceStatus(id, user.id, 'STRATEGY');
 
     return ok({
       visualDirection: saved.visualDirection,

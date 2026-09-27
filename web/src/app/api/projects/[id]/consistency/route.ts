@@ -18,6 +18,7 @@ import { applyDelta } from 'brandstate';
 import { CONSISTENCY_DIMENSION_NAMES, RunConsistencyBody } from '@/lib/api/contracts';
 import type { RunConsistencyResponse } from '@/lib/api/contracts';
 import { handle, ok, parseBody, requireModelCredentials } from '@/lib/api/respond';
+import { requireUser } from '@/lib/auth/session';
 import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
@@ -32,11 +33,12 @@ export const maxDuration = 300;
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return handle<RunConsistencyResponse>(async () => {
     const { id } = await context.params;
+    const user = await requireUser();
     const body = await parseBody(request, RunConsistencyBody);
 
     requireModelCredentials();
 
-    const state = await loadBrandState(id);
+    const state = await loadBrandState(id, user.id);
 
     // No precondition beyond a loadable project: the check reports what it could not
     // compare rather than refusing. An early run over a half-built brand is useful, and
@@ -55,9 +57,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     );
     const findings = [...kept, ...result.value.consistency.findings];
 
-    const saved = await saveBrandState(
-      id,
-      applyDelta(state, 'consistency', {
+    const saved = await saveBrandState(id, user.id, applyDelta(state, 'consistency', {
         ...result.value.consistency,
         findings,
         // Recomputed over the merged set, so the status describes everything stored and
@@ -68,7 +68,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       }),
     );
 
-    const project = await advanceStatus(id, 'STRESS_TEST');
+    const project = await advanceStatus(id, user.id, 'STRESS_TEST');
 
     return ok({
       consistency: saved.consistency,

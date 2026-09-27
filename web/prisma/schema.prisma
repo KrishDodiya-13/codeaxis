@@ -22,8 +22,86 @@ enum ProjectStatus {
   COMPLETE
 }
 
+/// A person who can sign in.
+///
+/// `passwordHash` is null for an account created through Google: there is no password to
+/// store, and storing a placeholder would make "has a password" unanswerable.
+///
+/// `passwordChangedAt` is what makes a password reset able to invalidate sessions.
+/// Sessions are stateless JWTs, so there is no row to delete — instead a token issued
+/// before this timestamp is rejected, which revokes every existing session at once.
+model User {
+  id                String    @id @default(uuid())
+  /// Stored lowercased and trimmed, so one address cannot become two accounts.
+  email             String    @unique
+  name              String?
+  image             String?
+  /// Null for OAuth-only accounts. Never a plaintext password.
+  passwordHash      String?   @map("password_hash")
+  emailVerified     DateTime? @map("email_verified")
+  passwordChangedAt DateTime? @map("password_changed_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  accounts Account[]
+  projects Project[]
+
+  @@map("users")
+}
+
+/// A linked OAuth identity. Shape required by the Auth.js Prisma adapter.
+///
+/// The provider tokens live here rather than anywhere the browser can reach.
+model Account {
+  id                String  @id @default(uuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// One local account per identity at a given provider.
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+/// A one-time code for password recovery.
+///
+/// Only a hash of the code is stored, so a database leak does not hand over working
+/// codes. `attempts` caps guessing, `consumedAt` makes a code single-use, and generating
+/// a new code deletes the previous ones for that email.
+///
+/// Keyed by email rather than by user id on purpose: the request endpoint must behave
+/// identically whether or not an account exists, and looking up a user id first would
+/// make the two cases distinguishable.
+model PasswordResetOtp {
+  id        String    @id @default(uuid())
+  /// Lowercased, trimmed.
+  email     String
+  /// SHA-256 of the code. The code itself is never stored, logged, or returned.
+  codeHash  String    @map("code_hash")
+  expiresAt DateTime  @map("expires_at")
+  attempts  Int       @default(0)
+  consumedAt DateTime? @map("consumed_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([email])
+  @@map("password_reset_otps")
+}
+
 model Project {
   id           String        @id @default(uuid())
+  /// The owner. Required: a project with no owner is readable by everyone, which is the
+  /// hole this column closes.
+  userId       String        @map("user_id")
   name         String
   originalIdea String        @map("original_idea")
   productType  String?       @map("product_type")
@@ -32,8 +110,11 @@ model Project {
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   brandState BrandStateRecord?
 
+  /// Every list query is scoped to one owner, so the index matches the access pattern.
+  @@index([userId])
   @@map("projects")
 }
 

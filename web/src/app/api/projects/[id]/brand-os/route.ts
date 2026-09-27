@@ -19,6 +19,7 @@ import { compileBrandOs, runStep } from 'brandstate';
 import { CompileBrandOsBody } from '@/lib/api/contracts';
 import type { CompileBrandOsResponse } from '@/lib/api/contracts';
 import { handle, ok, parseBody, requireModelCredentials } from '@/lib/api/respond';
+import { requireUser } from '@/lib/auth/session';
 import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
@@ -33,11 +34,12 @@ export const maxDuration = 300;
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return handle<CompileBrandOsResponse>(async () => {
     const { id } = await context.params;
+    const user = await requireUser();
     const body = await parseBody(request, CompileBrandOsBody);
 
     requireModelCredentials();
 
-    const state = await loadBrandState(id);
+    const state = await loadBrandState(id, user.id);
     const client = deriverFor(state);
 
     const result = await compileBrandOs(client, {
@@ -54,11 +56,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     let locked = false;
     if (body.lock === true) {
       const finalBrand = await runStep(client, state, 'finalBrand');
-      await saveBrandState(id, finalBrand.state);
+      await saveBrandState(id, user.id, finalBrand.state);
       locked = true;
     }
 
-    const project = await advanceStatus(id, 'COMPLETE');
+    const project = await advanceStatus(id, user.id, 'COMPLETE');
 
     return ok({
       brandId: result.value.brandId,

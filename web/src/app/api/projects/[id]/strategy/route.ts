@@ -13,6 +13,7 @@ import { resolveSelectedStrategy, selectStrategy } from 'brandstate';
 import { SelectStrategyBody } from '@/lib/api/contracts';
 import type { SelectStrategyResponse } from '@/lib/api/contracts';
 import { BadRequestError, handle, ok, parseBody } from '@/lib/api/respond';
+import { requireUser } from '@/lib/auth/session';
 import {
   advanceStatus,
   loadBrandState,
@@ -23,9 +24,10 @@ import {
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return handle<SelectStrategyResponse>(async () => {
     const { id } = await context.params;
+    const user = await requireUser();
     const body = await parseBody(request, SelectStrategyBody);
 
-    const state = await loadBrandState(id);
+    const state = await loadBrandState(id, user.id);
 
     if (state.strategyOptions.length === 0) {
       throw new BadRequestError(
@@ -42,7 +44,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     );
 
     const next = { ...state, selectedStrategy: selection };
-    const saved = await saveBrandState(id, next);
+    const saved = await saveBrandState(id, user.id, next);
 
     // Resolved from the saved state rather than from the request, so what comes back is
     // what was actually stored.
@@ -52,7 +54,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       throw new Error('The stored selection does not resolve to one of the strategy options.');
     }
 
-    const project = await advanceStatus(id, 'STRATEGY');
+    const project = await advanceStatus(id, user.id, 'STRATEGY');
 
     return ok({
       selectedStrategy: selection,

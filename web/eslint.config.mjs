@@ -19,6 +19,8 @@ const config = [
       'src/generated/**',
       'prisma/**',
       'next-env.d.ts',
+      // Node test files, run by node --test rather than bundled.
+      '**/*.test.mjs',
     ],
   },
   ...compat.extends('next/core-web-vitals', 'next/typescript'),

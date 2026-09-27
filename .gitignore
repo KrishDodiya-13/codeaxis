@@ -10,3 +10,6 @@ runs/
 .next-dev/
 next-env.d.ts
 *.tsbuildinfo
+
+# Development mail: the file email provider writes messages here.
+.mail/

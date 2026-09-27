@@ -12,6 +12,7 @@
 import { buildBrandDna, describeGaps, isBrandDnaComplete } from 'brandstate';
 import type { GetBrandDnaResponse } from '@/lib/api/contracts';
 import { handle, ok } from '@/lib/api/respond';
+import { requireUser } from '@/lib/auth/session';
 import { getProject, loadBrandState, toProjectSummary } from '@/lib/db/projects';
 
 export const runtime = 'nodejs';
@@ -19,8 +20,9 @@ export const runtime = 'nodejs';
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   return handle<GetBrandDnaResponse>(async () => {
     const { id } = await context.params;
+    const user = await requireUser();
 
-    const [project, state] = await Promise.all([getProject(id), loadBrandState(id)]);
+    const [project, state] = await Promise.all([getProject(id, user.id), loadBrandState(id, user.id)]);
     const dna = buildBrandDna(state);
 
     return ok({

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { PosterRoom } from '@/components/landing/poster-section'
 import { STEPS, Wordmark } from '@/components/project/workflow-nav'
 import NewProjectForm from '@/components/project/new-project-form'
+import { requirePageAuth } from '@/lib/auth/page-guard'
 
 export const metadata: Metadata = { title: 'New project · BRANDOS' }
 
@@ -31,7 +32,10 @@ function StepStrip() {
   )
 }
 
-export default function NewProjectPage() {
+export default async function NewProjectPage() {
+  // Start Building lands here, so this is where a logged-out visitor is sent to login.
+  await requirePageAuth('/new')
+
   return (
     <main className="relative isolate min-h-[100svh] overflow-hidden bg-poster-paper text-poster-ink antialiased">
       <PosterRoom />

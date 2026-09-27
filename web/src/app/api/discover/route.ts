@@ -13,6 +13,7 @@ import {
 } from 'brandstate'
 import { DiscoverRequestSchema, DiscoverResultSchema } from '@/lib/discovery'
 import { credentialProblem } from '@/lib/api/credentials'
+import { guardAiRoute } from '@/lib/api/ai-guard'
 
 /*
  * POST /api/discover — run the discovery stage.
@@ -47,6 +48,11 @@ function error(status: number, message: string, detail?: unknown) {
 }
 
 export async function POST(request: Request) {
+  // Authentication and the per-user quota limit, before anything is parsed or spent.
+  // Server-side: a frontend check would be advisory.
+  const guard = await guardAiRoute('discover')
+  if (guard.response !== undefined) return guard.response
+
   let body: unknown
   try {
     body = await request.json()

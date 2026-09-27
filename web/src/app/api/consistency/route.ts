@@ -15,6 +15,7 @@ import {
   type BrandState,
 } from 'brandstate'
 import { credentialProblem } from '@/lib/api/credentials'
+import { guardAiRoute } from '@/lib/api/ai-guard'
 import { errorResponse, modelErrorResponse } from '@/lib/api/model-errors'
 import { deriverFor } from '@/lib/ai/deriver'
 import { mockContentCheck, runContentCheck } from '@/lib/ai/content-check'
@@ -54,6 +55,11 @@ function parseState(value: unknown): BrandState | NextResponse {
 }
 
 export async function POST(request: Request) {
+  // Authentication and the per-user quota limit, before anything is parsed or spent.
+  // Server-side: a frontend check would be advisory.
+  const guard = await guardAiRoute('consistency')
+  if (guard.response !== undefined) return guard.response
+
   let body: unknown
   try {
     body = await request.json()

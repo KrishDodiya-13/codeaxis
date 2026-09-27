@@ -9,6 +9,7 @@ import { applyDelta, position, toPositioningSection } from 'brandstate';
 import { RunPositionBody } from '@/lib/api/contracts';
 import type { RunPositionResponse } from '@/lib/api/contracts';
 import { handle, ok, parseBody, requireModelCredentials } from '@/lib/api/respond';
+import { requireUser } from '@/lib/auth/session';
 import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
@@ -20,11 +21,12 @@ import {
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return handle<RunPositionResponse>(async () => {
     const { id } = await context.params;
+    const user = await requireUser();
     const body = await parseBody(request, RunPositionBody);
 
     requireModelCredentials();
 
-    const state = await loadBrandState(id);
+    const state = await loadBrandState(id, user.id);
 
     // Throws DiscoveryIncompleteError when discovery is unfinished and forceProceed was
     // not set; the handler turns that into a 422 carrying the unresolved questions.
@@ -40,9 +42,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     // The echoed audience, problem and userNeed stay in the response only — discovery
     // remains the single source of truth for all three, and a second copy would drift.
     const section = toPositioningSection(result.value, state.discovery);
-    await saveBrandState(id, applyDelta(state, 'positioning', section));
+    await saveBrandState(id, user.id, applyDelta(state, 'positioning', section));
 
-    const project = await advanceStatus(id, 'STRATEGY');
+    const project = await advanceStatus(id, user.id, 'STRATEGY');
 
     return ok({ positioning: result.value, project: toProjectSummary(project) });
   });

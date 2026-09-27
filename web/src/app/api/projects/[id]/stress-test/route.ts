@@ -14,6 +14,7 @@ import { applyDelta, resolveSelectedStrategy } from 'brandstate';
 import { RunStressTestBody, TEST_TYPE_NAMES } from '@/lib/api/contracts';
 import type { RunStressTestResponse } from '@/lib/api/contracts';
 import { BadRequestError, handle, ok, parseBody, requireModelCredentials } from '@/lib/api/respond';
+import { requireUser } from '@/lib/auth/session';
 import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
@@ -28,11 +29,12 @@ export const maxDuration = 300;
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return handle<RunStressTestResponse>(async () => {
     const { id } = await context.params;
+    const user = await requireUser();
     const body = await parseBody(request, RunStressTestBody);
 
     requireModelCredentials();
 
-    const state = await loadBrandState(id);
+    const state = await loadBrandState(id, user.id);
 
     const selectedStrategy = resolveSelectedStrategy(state);
     if (selectedStrategy === undefined) {
@@ -53,12 +55,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     // discard a decision it was not asked about.
     const covered = new Set(body.scope ?? TEST_TYPE_NAMES);
     const kept = state.stressTests.filter((finding) => !covered.has(finding.type));
-    const saved = await saveBrandState(
-      id,
-      applyDelta(state, 'stressTests', [...kept, ...result.value.tests]),
+    const saved = await saveBrandState(id, user.id, applyDelta(state, 'stressTests', [...kept, ...result.value.tests]),
     );
 
-    const project = await advanceStatus(id, 'STRESS_TEST');
+    const project = await advanceStatus(id, user.id, 'STRESS_TEST');
 
     return ok({
       tests: saved.stressTests,

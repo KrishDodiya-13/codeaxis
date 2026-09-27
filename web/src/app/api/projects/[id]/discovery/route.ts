@@ -15,6 +15,7 @@ import type { DiscoverResult } from 'brandstate';
 import { RunDiscoveryBody } from '@/lib/api/contracts';
 import type { RunDiscoveryResponse } from '@/lib/api/contracts';
 import { handle, ok, parseBody, requireModelCredentials } from '@/lib/api/respond';
+import { requireUser } from '@/lib/auth/session';
 import { deriverFor } from '@/lib/ai/deriver';
 import {
   advanceStatus,
@@ -27,12 +28,13 @@ import {
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return handle<RunDiscoveryResponse>(async () => {
     const { id } = await context.params;
+    const user = await requireUser();
     const body = await parseBody(request, RunDiscoveryBody);
 
     requireModelCredentials();
 
-    const project = await getProject(id);
-    const state = await loadBrandState(id);
+    const project = await getProject(id, user.id);
+    const state = await loadBrandState(id, user.id);
 
     // The stored idea is the source of truth; a caller may override it only to correct
     // a typo, not to change the project underneath its own discovery.
@@ -51,11 +53,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
 
     const discoveryState = toDiscoverySection(result.value);
-    const saved = await saveBrandState(id, applyDelta(state, 'discovery', discoveryState));
+    const saved = await saveBrandState(id, user.id, applyDelta(state, 'discovery', discoveryState));
 
     // Only move the project on once there is nothing left to ask.
     const sufficient = isDiscoverySufficient(result.value);
-    const updated = await advanceStatus(id, sufficient ? 'POSITIONING' : 'DISCOVERY');
+    const updated = await advanceStatus(id, user.id, sufficient ? 'POSITIONING' : 'DISCOVERY');
 
     return ok({
       discovery: result.value,
