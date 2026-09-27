@@ -178,11 +178,14 @@ export function ProgressSteps({ steps }: { steps: { label: string; state: StepSt
 export function ErrorCard({
   message,
   detail,
+  savedNote = 'Nothing is lost — every decision so far is saved.',
   onRetry,
   onDismiss,
 }: {
   message: string
   detail?: string
+  /** What the user can count on after the failure. */
+  savedNote?: string
   onRetry?: () => void
   onDismiss?: () => void
 }) {
@@ -195,7 +198,7 @@ export function ErrorCard({
     >
       <p className="text-sm font-extrabold text-[#c4282d]">That didn&apos;t go through.</p>
       <p className="mt-1 break-words font-semibold leading-snug">{headline}</p>
-      <p className="mt-1 text-xs font-semibold text-poster-ink/55">Nothing is lost — every decision so far is saved.</p>
+      <p className="mt-1 text-xs font-semibold text-poster-ink/55">{savedNote}</p>
       {detail && (
         <details className="group/details mt-2">
           <summary className="cursor-pointer text-xs font-extrabold uppercase tracking-wide text-poster-ink/50 hover:text-poster-ink">
