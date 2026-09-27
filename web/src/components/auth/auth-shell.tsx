@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import PaperCrumple from '@/components/PaperCrumple'
+import PaperCrumple from './lazy-paper-crumple'
 import HoverLetters from '@/components/hover-letters'
 import { PosterRoom } from '@/components/landing/poster-section'
 
@@ -52,7 +52,7 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
           It starts at the centre, which is empty space at xl widths and up. */}
       <div className="pointer-events-none fixed inset-0 z-20 hidden xl:block">
         <PaperCrumple
-          src="/brandos-print.png"
+          src="/brandos-print.webp"
           alt="BRANDOS print: Build, break, launch"
           width={380}
           height={475}

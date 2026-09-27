@@ -184,7 +184,10 @@ const TechText = ({
     let dpr = 1
     let raf = 0
     let last = performance.now()
-    let visible = true
+    // Start invisible and let the IntersectionObserver wake the canvas. Starting visible
+    // made every heading on the page rasterise its glyphs during load — including the
+    // ones far below the fold — which was most of the landing page's blocking time.
+    let visible = false
     let alive = true
     let layoutKey = ''
     let requestedFont = ''
@@ -738,10 +741,14 @@ const TechText = ({
 
     const resizeObserver = new ResizeObserver(resize)
     resizeObserver.observe(container)
-    const intersectionObserver = new IntersectionObserver(([entry]) => {
-      visible = entry?.isIntersecting ?? true
-      wake()
-    })
+    // A 300px margin builds a heading just before it scrolls in, so it is ready on arrival.
+    const intersectionObserver = new IntersectionObserver(
+      ([entry]) => {
+        visible = entry?.isIntersecting ?? true
+        wake()
+      },
+      { rootMargin: '300px 0px' },
+    )
     intersectionObserver.observe(container)
     if (document.fonts) document.fonts.ready.then(refreshFonts, refreshFonts)
 

@@ -47,6 +47,18 @@ function room(): { back: Seg[]; rays: Seg[]; depth: string[] } {
 
 const ROOM = room()
 
+/**
+ * The whole room as one path. It used to be ~86 separate <line>/<path> elements per
+ * room, and this backdrop sits behind every landing section and every app page — so the
+ * browser was styling, laying out and painting hundreds of nodes for a faint grid. One
+ * path draws exactly the same strokes as one node.
+ */
+const round = (n: number) => Math.round(n * 100) / 100
+const ROOM_PATH = [
+  ...[...ROOM.back, ...ROOM.rays].map((s) => `M${round(s[0])} ${round(s[1])}L${round(s[2])} ${round(s[3])}`),
+  ...ROOM.depth,
+].join('')
+
 export function PosterRoom() {
   return (
     <svg
@@ -55,17 +67,14 @@ export function PosterRoom() {
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      <g stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.13">
-        {ROOM.back.map((s, i) => (
-          <line key={'b' + i} x1={s[0]} y1={s[1]} x2={s[2]} y2={s[3]} vectorEffect="non-scaling-stroke" />
-        ))}
-        {ROOM.rays.map((s, i) => (
-          <line key={'r' + i} x1={s[0]} y1={s[1]} x2={s[2]} y2={s[3]} vectorEffect="non-scaling-stroke" />
-        ))}
-        {ROOM.depth.map((d, i) => (
-          <path key={'d' + i} d={d} vectorEffect="non-scaling-stroke" />
-        ))}
-      </g>
+      <path
+        d={ROOM_PATH}
+        stroke="currentColor"
+        strokeWidth="0.8"
+        fill="none"
+        opacity="0.13"
+        vectorEffect="non-scaling-stroke"
+      />
     </svg>
   )
 }
@@ -82,7 +91,9 @@ export function PosterSection({
   return (
     <section
       id={id}
-      className="relative isolate flex min-h-[100svh] flex-col justify-center overflow-hidden bg-poster-paper text-poster-ink antialiased"
+      // content-visibility lets the browser skip rendering a section until it nears the
+      // viewport; the intrinsic size keeps the scrollbar honest meanwhile.
+      className="relative isolate flex min-h-[100svh] flex-col justify-center overflow-hidden bg-poster-paper text-poster-ink antialiased [content-visibility:auto] [contain-intrinsic-size:auto_100svh]"
     >
       <PosterRoom />
       <div className={cn('relative z-10 w-full px-6 py-24 md:px-[8.8%] md:py-28', className)}>

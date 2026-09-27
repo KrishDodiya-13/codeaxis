@@ -189,6 +189,12 @@ function room(): { back: Seg[]; rays: Seg[]; depth: string[] } {
 }
 
 const ROOM = room()
+const ROOM_PATH = [
+  ...[...ROOM.back, ...ROOM.rays].map(
+    (s) => `M${Math.round(s[0] * 100) / 100} ${Math.round(s[1] * 100) / 100}L${Math.round(s[2] * 100) / 100} ${Math.round(s[3] * 100) / 100}`
+  ),
+  ...ROOM.depth,
+].join("")
 
 /** Five irregular petals, closed, as one outline — so the stroke never crosses itself. */
 function flowerPath() {
@@ -527,17 +533,9 @@ export default function MascotPortfolioHero({
       <style>{CSS}</style>
 
       <svg className="mph-room" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
-        <g stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.13">
-          {ROOM.back.map((s, i) => (
-            <line key={"b" + i} x1={s[0]} y1={s[1]} x2={s[2]} y2={s[3]} />
-          ))}
-          {ROOM.rays.map((s, i) => (
-            <line key={"r" + i} x1={s[0]} y1={s[1]} x2={s[2]} y2={s[3]} />
-          ))}
-          {ROOM.depth.map((d, i) => (
-            <path key={"d" + i} d={d} />
-          ))}
-        </g>
+        {/* One path for the whole room instead of ~86 elements: same strokes, far less to
+            style, lay out and paint on first load. */}
+        <path d={ROOM_PATH} stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.13" />
       </svg>
 
       <div className="mph-stage">
