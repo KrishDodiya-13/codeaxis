@@ -3,3 +3,6 @@ dist/
 .env
 *.log
 runs/
+.next/
+next-env.d.ts
+*.tsbuildinfo
