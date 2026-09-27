@@ -11,7 +11,13 @@ import { after, before, describe, it } from 'node:test';
 import { RefusalError, SectionParseError } from '../src/client.ts';
 import type { SectionDeriver } from '../src/client.ts';
 import { createDiscoverServer, listen } from '../src/server.ts';
-import { StubDeriver, completeState, discoverResult, positionResult } from './fixtures.ts';
+import {
+  StubDeriver,
+  completeState,
+  discoverResult,
+  indistinctCandidates,
+  positionResult,
+} from './fixtures.ts';
 import { toPositionResponse } from '../src/position.ts';
 
 let server: Server;
@@ -52,6 +58,7 @@ async function postTo(
 
 const post = (body: unknown, raw?: string) => postTo('/api/discover', body, raw);
 const postPosition = (body: unknown, raw?: string) => postTo('/api/position', body, raw);
+const postBattle = (body: unknown, raw?: string) => postTo('/api/battle', body, raw);
 
 /** A settled discovery, so the POSITION guard lets it through. */
 function settledDiscovery() {
@@ -279,6 +286,121 @@ describe('POST /api/position', () => {
   });
 });
 
+describe('POST /api/battle', () => {
+  it('returns a bare array of strategies, one per direction', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postBattle({ discovery: settledDiscovery() });
+
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(json));
+    assert.equal(json.length, 3);
+    assert.deepEqual(
+      json.map((option: { direction: string }) => option.direction),
+      ['CONNECTION', 'COMPETITION', 'TRUST'],
+    );
+  });
+
+  it('returns only the documented fields, with no internal comparison fields', async () => {
+    deriver = new StubDeriver();
+    const { json } = await postBattle({ discovery: settledDiscovery() });
+
+    assert.deepEqual(Object.keys(json[0]).sort(), [
+      'audienceFit',
+      'differentiation',
+      'direction',
+      'positioning',
+      'rationale',
+      'risks',
+      'strengths',
+    ]);
+  });
+
+  it('ranks nothing and recommends nothing', async () => {
+    deriver = new StubDeriver();
+    const { json } = await postBattle({ discovery: settledDiscovery() });
+
+    for (const option of json) {
+      for (const field of ['score', 'rank', 'recommended', 'isBest', 'winner']) {
+        assert.equal(option[field], undefined, `strategy carried a ${field}`);
+      }
+    }
+  });
+
+  it('gives every strategy at least one risk', async () => {
+    deriver = new StubDeriver();
+    const { json } = await postBattle({ discovery: settledDiscovery() });
+
+    for (const option of json) {
+      assert.ok(option.risks.length > 0, `${option.direction} had no risk`);
+    }
+  });
+
+  it('accepts forced directions', async () => {
+    deriver = new StubDeriver();
+    const { status } = await postBattle({
+      discovery: settledDiscovery(),
+      directions: ['CONNECTION', 'COMPETITION', 'TRUST'],
+    });
+    assert.equal(status, 200);
+  });
+
+  it('rejects an unknown direction with a 400 listing the real ones', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postBattle({
+      discovery: settledDiscovery(),
+      directions: ['VIBES'],
+    });
+
+    assert.equal(status, 400);
+    assert.match(json.error, /CONNECTION/);
+  });
+
+  it('rejects a missing discovery with a 400', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postBattle({});
+
+    assert.equal(status, 400);
+    assert.match(json.error, /"discovery" is required/);
+  });
+
+  it('rejects a count that cannot be compared', async () => {
+    deriver = new StubDeriver();
+    const { status, json } = await postBattle({ discovery: settledDiscovery(), count: 1 });
+
+    assert.equal(status, 400);
+    assert.match(json.error, /between 2/);
+  });
+
+  it('reports strategies that stayed indistinct as a 502, with the collisions', async () => {
+    deriver = {
+      deriveSection: async (_section: string, _state: string, _schema: unknown, options?: { userPrompt?: string }) => ({
+        value: options?.userPrompt?.includes('<other_strategies>')
+          ? { strategy: indistinctCandidates[1] }
+          : { strategies: indistinctCandidates },
+        usage: { inputTokens: 1, outputTokens: 1, cacheCreationTokens: 0, cacheReadTokens: 0 },
+      }),
+    } as never;
+
+    const { status, json } = await postBattle({
+      discovery: settledDiscovery(),
+      directions: ['CONNECTION', 'OUTCOMES'],
+    });
+
+    assert.equal(status, 502);
+    assert.match(json.error, /not meaningfully different/);
+    assert.equal(json.collisions[0].direction, 'OUTCOMES');
+  });
+
+  it('logs the directions it produced', async () => {
+    deriver = new StubDeriver();
+    logs.length = 0;
+    await postBattle({ discovery: settledDiscovery() });
+
+    assert.match(logs[0]!, /POST \/api\/battle 200/);
+    assert.match(logs[0]!, /directions=CONNECTION\/COMPETITION\/TRUST/);
+  });
+});
+
 describe('routing', () => {
   it('rejects a GET on the endpoint with a 405 and an Allow header', async () => {
     const response = await fetch(`${baseUrl}/api/discover`);
@@ -293,6 +415,7 @@ describe('routing', () => {
     assert.equal(response.status, 404);
     assert.match(json.error, /POST \/api\/discover/);
     assert.match(json.error, /POST \/api\/position/);
+    assert.match(json.error, /POST \/api\/battle/);
   });
 
   it('rejects a GET on the position endpoint with a 405', async () => {

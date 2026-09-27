@@ -2,8 +2,53 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { isComplete, rollbackTo, runPipeline, runPipelineFromProject } from '../src/pipeline.ts';
 import { SECTION_ORDER, applyDelta, createInitialState, isSectionPopulated, populatedSections, validateState } from '../src/state.ts';
-import { MissingDependencyError, missingDependencies, runStep } from '../src/steps.ts';
+import {
+  MissingDependencyError,
+  StrategySelectionRequiredError,
+  missingDependencies,
+  runStep,
+} from '../src/steps.ts';
+import { selectStrategy } from '../src/battle.ts';
+import type { SectionDeriver } from '../src/client.ts';
+import type { BrandState } from '../src/types.ts';
 import { StubDeriver, completeState, project, sectionFixtures } from './fixtures.ts';
+
+/**
+ * Runs the whole pipeline, making the choice a human would make at the checkpoint.
+ *
+ * The pipeline refuses to choose a direction on its own, so an end-to-end test has
+ * to stand in for the person — which is the behaviour being relied on, not a
+ * workaround for it.
+ */
+async function runWithSelection(
+  deriver: SectionDeriver,
+  initial: BrandState,
+  direction = 'TRUST',
+) {
+  const first = await runPipeline(deriver, initial, { until: 'strategyOptions' });
+  const chosen: BrandState = {
+    ...first.state,
+    selectedStrategy: selectStrategy(first.state.strategyOptions, direction),
+  };
+  const second = await runPipeline(deriver, chosen);
+
+  return {
+    state: second.state,
+    // The second pass skips what the first already did, except the selection
+    // itself — which the human made, so it counts as a step that happened.
+    steps: [
+      ...first.steps,
+      ...second.steps.filter((step) => step.skipped !== true || step.section === 'selectedStrategy'),
+    ],
+    snapshots: [...first.snapshots, ...second.snapshots],
+    usage: {
+      inputTokens: first.usage.inputTokens + second.usage.inputTokens,
+      outputTokens: first.usage.outputTokens + second.usage.outputTokens,
+      cacheCreationTokens: first.usage.cacheCreationTokens + second.usage.cacheCreationTokens,
+      cacheReadTokens: first.usage.cacheReadTokens + second.usage.cacheReadTokens,
+    },
+  };
+}
 
 describe('runStep', () => {
   it('writes the section it was asked for and nothing else', async () => {
@@ -42,10 +87,12 @@ describe('runStep', () => {
     let state = createInitialState(project);
     state = (await runStep(deriver, state, 'discovery')).state;
     state = (await runStep(deriver, state, 'positioning')).state;
+    state = (await runStep(deriver, state, 'strategyOptions')).state;
+    state = { ...state, selectedStrategy: selectStrategy(state.strategyOptions, 'TRUST') };
     state = (await runStep(deriver, state, 'shape')).state;
 
     // shape is a plain section step, so it receives the serialized state.
-    const shapeCall = deriver.calls[2]!;
+    const shapeCall = deriver.calls[3]!;
     assert.match(shapeCall.serializedState, /discovery/);
     assert.match(shapeCall.serializedState, /positioning/);
     assert.match(shapeCall.serializedState, /project/);
@@ -79,29 +126,60 @@ describe('missingDependencies', () => {
 });
 
 describe('runPipeline', () => {
+  it('halts at strategy selection rather than choosing for the user', async () => {
+    const deriver = new StubDeriver();
+
+    await assert.rejects(
+      () => runPipelineFromProject(deriver, project),
+      (error: unknown) => {
+        assert.ok(error instanceof StrategySelectionRequiredError);
+        assert.deepEqual(error.directions, ['CONNECTION', 'COMPETITION', 'TRUST']);
+        return true;
+      },
+    );
+
+    // It got as far as generating the options, and no further.
+    assert.deepEqual(deriver.calls.map((call) => call.section), [
+      'discovery',
+      'positioning',
+      'strategyOptions',
+    ]);
+  });
+
   it('derives every section in order and produces a valid state', async () => {
     const deriver = new StubDeriver();
-    const result = await runPipelineFromProject(deriver, project);
+    const result = await runWithSelection(deriver, createInitialState(project));
 
     assert.deepEqual(
       result.steps.map((step) => step.section),
       [...SECTION_ORDER],
     );
-    assert.deepEqual(deriver.calls.map((call) => call.section), [...SECTION_ORDER]);
     assert.ok(isComplete(result.state));
     assert.deepEqual(validateState(result.state), { valid: true });
   });
 
+  it('never asks the model to choose a strategy', async () => {
+    const deriver = new StubDeriver();
+    await runWithSelection(deriver, createInitialState(project));
+
+    assert.equal(
+      deriver.calls.some((call) => call.section === 'selectedStrategy'),
+      false,
+    );
+  });
+
   it('accumulates usage across steps', async () => {
-    const result = await runPipelineFromProject(new StubDeriver(), project);
-    assert.equal(result.usage.inputTokens, 100 * SECTION_ORDER.length);
-    assert.equal(result.usage.cacheReadTokens, 80 * SECTION_ORDER.length);
+    const result = await runWithSelection(new StubDeriver(), createInitialState(project));
+
+    // Every section except selectedStrategy costs one model call.
+    const modelSteps = SECTION_ORDER.length - 1;
+    assert.equal(result.usage.inputTokens, 100 * modelSteps);
+    assert.equal(result.usage.cacheReadTokens, 80 * modelSteps);
   });
 
   it('keeps a snapshot from before each step', async () => {
-    const result = await runPipelineFromProject(new StubDeriver(), project);
+    const result = await runWithSelection(new StubDeriver(), createInitialState(project));
 
-    assert.equal(result.snapshots.length, SECTION_ORDER.length);
     // The snapshot taken before a step must not contain that step's output.
     for (const snapshot of result.snapshots) {
       assert.equal(isSectionPopulated(snapshot.state, snapshot.section), false);
@@ -189,9 +267,23 @@ describe('rollbackTo', () => {
   it('discards the named section and everything after it', () => {
     const rolled = rollbackTo(completeState(), 'visualDirection');
 
-    assert.deepEqual(populatedSections(rolled), ['discovery', 'positioning', 'shape']);
-    assert.equal(rolled.selectedStrategy, undefined);
+    assert.deepEqual(populatedSections(rolled), [
+      'discovery',
+      'positioning',
+      'strategyOptions',
+      'selectedStrategy',
+      'shape',
+    ]);
     assert.equal(rolled.finalBrand, undefined);
+  });
+
+  it('discards the selection when rolling back to it, so it is chosen again', () => {
+    const rolled = rollbackTo(completeState(), 'selectedStrategy');
+
+    assert.equal(rolled.selectedStrategy, undefined);
+    // The options survive: they are what the next choice gets made from.
+    assert.equal(rolled.strategyOptions.length, 3);
+    assert.deepEqual(populatedSections(rolled), ['discovery', 'positioning', 'strategyOptions']);
   });
 
   it('leaves the earlier decisions untouched', () => {
@@ -206,12 +298,21 @@ describe('rollbackTo', () => {
 
   it('produces a state the pipeline will resume from the right point', async () => {
     const deriver = new StubDeriver();
-    const rolled = rollbackTo(completeState(), 'selectedStrategy');
+    const rolled = rollbackTo(completeState(), 'visualDirection');
     await runPipeline(deriver, rolled);
 
     assert.deepEqual(
       deriver.calls.map((call) => call.section),
-      ['selectedStrategy', 'stressTests', 'consistency', 'finalBrand'],
+      ['visualDirection', 'stressTests', 'consistency', 'finalBrand'],
+    );
+  });
+
+  it('stops again at selection when the choice itself was rolled back', async () => {
+    const rolled = rollbackTo(completeState(), 'selectedStrategy');
+
+    await assert.rejects(
+      () => runPipeline(new StubDeriver(), rolled),
+      StrategySelectionRequiredError,
     );
   });
 

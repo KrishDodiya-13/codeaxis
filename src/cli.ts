@@ -20,7 +20,17 @@ import {
 } from './position.ts';
 import { createDiscoverServer, listen } from './server.ts';
 import { renderMarkdown } from './report.ts';
-import { MissingDependencyError, STEPS, runStep } from './steps.ts';
+import { MissingDependencyError, STEPS, StrategySelectionRequiredError, runStep } from './steps.ts';
+import {
+  BattleInputError,
+  IndistinctStrategiesError,
+  battle,
+  resolveDirections,
+  selectStrategy,
+  validateBattleRequest,
+} from './battle.ts';
+import { DIRECTIONS } from './archetypes.ts';
+import { resolveSelectedStrategy } from './state.ts';
 import { isComplete, rollbackTo, runPipeline } from './pipeline.ts';
 import type { StepRecord } from './pipeline.ts';
 import {
@@ -47,7 +57,9 @@ Usage
   brandstate diff <other.json>     Compare a saved run against another file.
   brandstate discover <idea>       Run DISCOVER alone and print the result.
   brandstate position <file>       Run POSITION against a discovery JSON file.
-  brandstate serve                 Serve the DISCOVER and POSITION endpoints.
+  brandstate battle <file>         Generate strategy options from a discovery file.
+  brandstate select <DIRECTION>    Choose a direction in a saved run.
+  brandstate serve                 Serve the DISCOVER, POSITION and BATTLE endpoints.
 
 Options
   --run <path>        Run file. Default: runs/brand.json
@@ -65,6 +77,10 @@ Options
   --competitors <list>  For "position": comma-separated known alternatives.
   --force             For "position": proceed despite unresolved open questions.
   --alternatives      For "position": also return the angles not chosen.
+  --directions <list> For "battle": comma-separated archetypes to force.
+  --count <n>         For "battle": how many strategies. Default: 3
+  --positioning <path>  For "battle": a positioning JSON file to anchor to.
+  --reason <text>     For "select": why this direction was chosen.
   --port <n>          For "serve". Default: 3000
   --host <name>       For "serve". Default: 127.0.0.1
 
@@ -168,11 +184,48 @@ async function commandRun(args: Args): Promise<void> {
     : undefined;
 
   const path = runPath(args);
-  const result = await runPipeline(clientFrom(args), createInitialState(project), {
-    ...(until ? { until } : {}),
-    onStepStart: (_section, label) => process.stderr.write(`${label}...\n`),
-    onStepFinish: reportStep,
-  });
+
+  // Resume an existing run rather than starting over. This is what makes the
+  // selection checkpoint usable: run, choose a direction, run again to continue.
+  // The saved project wins, so the idea does not have to be retyped identically.
+  let latest = createInitialState(project);
+  try {
+    const saved = await loadState(path);
+    if (populatedSections(saved).length > 0) {
+      latest = saved;
+      const selected = resolveSelectedStrategy(saved);
+      process.stderr.write(
+        `Resuming ${path} (${populatedSections(saved).length} sections done` +
+          `${selected ? `, ${selected.direction} chosen` : ''}).\n`,
+      );
+    }
+  } catch (error) {
+    // No run file yet is the normal case for a first run; anything else is real.
+    if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+  }
+  let result;
+  try {
+    result = await runPipeline(clientFrom(args), latest, {
+      ...(until ? { until } : {}),
+      onStepStart: (_section, label) => process.stderr.write(`${label}...\n`),
+      onStepFinish: (record, state) => {
+        latest = state;
+        reportStep(record);
+      },
+    });
+  } catch (error) {
+    if (!(error instanceof StrategySelectionRequiredError)) throw error;
+
+    await persist(args, path, latest);
+    process.stderr.write(
+      `\nStopped at strategy selection — ${error.directions.length} directions are on the table:\n` +
+        `${latest.strategyOptions.map((option) => `  ${option.direction}: ${option.positioning.split('.')[0]}.`).join('\n')}\n\n` +
+        `Review them with: brandstate show --run ${path}\n` +
+        `Then choose one:   brandstate select <DIRECTION> --run ${path} --reason "..."\n` +
+        `And continue:      brandstate run "${idea}" --run ${path}\n`,
+    );
+    return;
+  }
 
   process.stderr.write(
     `\nTotal: ${result.usage.inputTokens} input, ${result.usage.outputTokens} output, ` +
@@ -330,6 +383,72 @@ async function commandPosition(args: Args): Promise<void> {
   }
 }
 
+async function commandBattle(args: Args): Promise<void> {
+  const path = args.positionals[0];
+  if (path === undefined) {
+    fail('A discovery JSON file is required: brandstate battle <discovery.json>');
+  }
+
+  const { readFile } = await import('node:fs/promises');
+  const body: Record<string, unknown> = {
+    discovery: JSON.parse(await readFile(path, 'utf8')),
+  };
+
+  const positioningPath = flagString(args, 'positioning');
+  if (positioningPath !== undefined) {
+    body.positioning = JSON.parse(await readFile(positioningPath, 'utf8'));
+  }
+
+  const directions = flagString(args, 'directions');
+  if (directions !== undefined) {
+    body.directions = directions.split(',').map((name) => name.trim()).filter((name) => name !== '');
+  }
+
+  const count = flagString(args, 'count');
+  if (count !== undefined) {
+    if (!/^\d+$/.test(count)) fail(`--count must be a positive integer, got "${count}".`);
+    body.count = Number(count);
+  }
+
+  const request = validateBattleRequest(body);
+  process.stderr.write(`Directions: ${resolveDirections(request).join(', ')}
+`);
+
+  const result = await battle(clientFrom(args), request);
+  process.stdout.write(`${stableStringify(result.value, 2)}
+`);
+  process.stderr.write(
+    `
+${result.value.length} strategies, no winner picked — that is a human decision.
+`,
+  );
+}
+
+async function commandSelect(args: Args): Promise<void> {
+  const direction = args.positionals[0];
+  if (direction === undefined) {
+    fail(`A direction is required: brandstate select <DIRECTION>. One of: ${DIRECTIONS.join(', ')}`);
+  }
+
+  const path = runPath(args);
+  const state = await loadState(path);
+
+  if (state.strategyOptions.length === 0) {
+    fail('There are no strategy options to choose from yet. Run the pipeline up to strategyOptions first.');
+  }
+
+  const selection = selectStrategy(state.strategyOptions, direction, flagString(args, 'reason'));
+  const updated = { ...state, selectedStrategy: selection };
+
+  await saveState(path, updated);
+  const chosen = resolveSelectedStrategy(updated)!;
+  process.stdout.write(`Chose ${chosen.direction} at ${selection.chosenAt}.
+`);
+  process.stderr.write(`Saved ${path}
+Next: brandstate run --run ${path} to develop it.
+`);
+}
+
 async function commandServe(args: Args): Promise<void> {
   const portFlag = flagString(args, 'port');
   if (portFlag !== undefined && !/^\d+$/.test(portFlag)) {
@@ -382,6 +501,8 @@ async function main(): Promise<void> {
     diff: commandDiff,
     discover: commandDiscover,
     position: commandPosition,
+    battle: commandBattle,
+    select: commandSelect,
     serve: commandServe,
   };
 
@@ -400,7 +521,9 @@ main().catch((error: unknown) => {
     error instanceof RefusalError ||
     error instanceof InvalidRunFileError ||
     error instanceof PositionInputError ||
-    error instanceof VagueCategoryError
+    error instanceof VagueCategoryError ||
+    error instanceof BattleInputError ||
+    error instanceof IndistinctStrategiesError
   ) {
     fail(error.message);
   }

@@ -1,3 +1,5 @@
+import type { Direction } from './archetypes.ts';
+
 /**
  * The central brand object.
  *
@@ -90,18 +92,41 @@ export type VisualDirection = {
   avoid: string[];
 };
 
-/** The chosen direction once options have been narrowed down. */
-export type SelectedStrategy = {
-  name: string;
-  tagline: string;
-  /** Which naming territory the name came from. */
-  namingTerritory: string;
-  /** The positioning statement in one sentence. */
-  positioningStatement: string;
-  /** Why this option beat the alternatives. */
+/**
+ * One candidate strategy from BRAND BATTLE.
+ *
+ * Several of these are generated against deliberately different archetypes so a
+ * human can compare trade-offs and choose, rather than rubber-stamping whatever
+ * the model produced first.
+ */
+export type StrategyOption = {
+  /** The archetype this strategy is built around, e.g. `CONNECTION`. */
+  direction: Direction;
+  /** This strategy's positioning statement, two or three sentences. */
+  positioning: string;
+  strengths: string[];
+  /** Never empty: a direction with no stated risk has not been thought through. */
+  risks: string[];
+  /** Who this resonates with most, and who it resonates with less. */
+  audienceFit: string;
+  /** How this stands apart, seen through this direction specifically. */
+  differentiation: string;
   rationale: string[];
-  /** Directions considered and set aside, so the choice stays auditable. */
-  rejectedAlternatives: string[];
+};
+
+/**
+ * The chosen direction — a pointer into `strategyOptions`, not a copy of it.
+ *
+ * Referencing rather than duplicating means there is exactly one copy of the
+ * chosen strategy's detail, so the two cannot drift apart. Use
+ * `resolveSelectedStrategy` to get the full strategy back.
+ */
+export type SelectedStrategy = {
+  direction: Direction;
+  /** ISO 8601 timestamp of when the choice was made. */
+  chosenAt: string;
+  /** Why this one was picked over the others, when a reason was given. */
+  reasonChosen?: string;
 };
 
 export type StressTest = {
@@ -161,6 +186,8 @@ export type BrandState = {
   positioning: Positioning;
   shape: Shape;
   visualDirection: VisualDirection;
+  /** Every candidate considered, including the ones not picked. */
+  strategyOptions: StrategyOption[];
   selectedStrategy?: SelectedStrategy;
   stressTests: StressTest[];
   consistency: Consistency;
@@ -176,6 +203,7 @@ export type BrandStateSection =
   | 'positioning'
   | 'shape'
   | 'visualDirection'
+  | 'strategyOptions'
   | 'selectedStrategy'
   | 'stressTests'
   | 'consistency'

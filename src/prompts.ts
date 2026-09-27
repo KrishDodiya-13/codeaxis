@@ -25,12 +25,13 @@ The BrandState has these sections, derived in this order:
 1. project — the raw seed: what is being built, and the stated goal. Supplied by the user; never yours to change.
 2. discovery — the problem space: audience, need, goals, constraints, assumptions, open questions.
 3. positioning — where the brand sits in the market, and why.
-4. shape — personality and voice: naming territories, tagline directions, messaging hierarchy.
-5. visualDirection — color, type, imagery, shape language, mood, and what to avoid.
-6. selectedStrategy — the chosen direction once the options have been narrowed.
-7. stressTests — checks run against the chosen strategy.
-8. consistency — a cross-check that the sections do not contradict each other.
-9. finalBrand — the finished, locked package.
+4. strategyOptions — several genuinely different strategic directions for the same problem, laid out for comparison.
+5. selectedStrategy — which direction was chosen. A human decision, never yours.
+6. shape — personality and voice for the chosen direction: naming territories, tagline directions, messaging hierarchy.
+7. visualDirection — color, type, imagery, shape language, mood, and what to avoid.
+8. stressTests — checks run against the chosen direction as developed.
+9. consistency — a cross-check that the sections do not contradict each other.
+10. finalBrand — the finished, locked package.
 
 On every call you receive the entire BrandState derived so far. You are asked for exactly one section. Three rules follow from that, and they are not negotiable:
 
@@ -132,6 +133,46 @@ The problem field is echoed from discovery so this object can be audited on its 
 
 No brand name, no tagline, no personality or voice. No colors or typography. Do not stress-test your own positioning; that happens later, once there is more to test against. Do not edit discovery.`;
 
+/**
+ * The BRAND BATTLE step.
+ *
+ * A single position chosen without comparison is a guess dressed up as a decision.
+ * This step lays out several genuinely different directions so a human can pick.
+ * The failure mode is the easy one: three strategies that are the same idea with
+ * different adjectives. The instructions push against that, and the code checks the
+ * result rather than trusting it.
+ */
+export const BATTLE_INSTRUCTIONS = `# This step: strategy options
+
+Generate one strategy per assigned direction. Each is a different strategic bet on the same product, laid out so a human can compare trade-offs and choose.
+
+## What "meaningfully different" means
+
+Different tone is not different strategy. Three strategies are meaningfully different when they differ in **who they would attract, what they would risk, and what they would optimise for**. If two of your strategies would appeal to the same people, fail in the same way, and win on the same claim, they are one strategy written twice — no matter how differently they read.
+
+Test each pair before you return them: could the same customer pick either one for the same reason? If yes, one of them has to change.
+
+## What must stay the same
+
+All of them are about the same product, for the same audience, solving the same problem. This is not inventing several different products. The discovery input — and the positioning, if you were given one — is the fixed ground. Each strategy interprets that ground through its direction's lens; none of them redefines it.
+
+## Per strategy
+
+- **positioning**: two or three sentences, framed through this direction. Short. This is a comparison document, not a brand brief — depth comes later, for whichever direction wins.
+- **strengths**: what this direction genuinely has going for it *here*. "Builds community" is not a strength, it is the archetype restated. Tie it to something in discovery.
+- **risks**: at least one substantial risk, and mean it. Every strategic bet costs something — narrower audience, slower proof, thinner launch, harder story. A direction you list no real risk for is a direction you have not examined, and an empty risk list is a failure, not a clean bill of health.
+- **audienceFit**: who this resonates with most *and who it resonates with less*. Name both. A direction that appeals to everyone equally is not a direction. Different strategies should genuinely suit somewhat different slices of the audience — that is part of what makes them different at all.
+- **differentiation**: how this stands apart from the alternatives, through this direction specifically. Two strategies must not come down to the same underlying claim in different clothes.
+- **rationale**: why this direction is credible for *this* input, citing discovery or positioning concretely.
+
+## Do not pick a winner
+
+Your job is to lay out real options, not to advance a favourite and surround it with two decoys. Do not rank them, do not recommend one, do not weaken one to make another look better. Every strategy here must be one you would defend if it were chosen. The choice belongs to a human.
+
+## Out of scope
+
+No names, taglines, colors or typography — for any of them. Each strategy's positioning is a strategic statement, not brand execution. Do not stress-test the strategies; that happens later, against whichever one is chosen.`;
+
 /** Per-step instructions. Appended after `METHODOLOGY`, so they stay outside the cached prefix. */
 export const STEP_INSTRUCTIONS: Record<BrandStateSection, string> = {
   discovery: DISCOVER_INSTRUCTIONS,
@@ -150,6 +191,8 @@ Place the brand in the market. Discovery is settled — work from it rather than
 
 Give the brand a personality and a voice, then explore names, lines and messaging within it. Everything here must be legible as coming from the positioning already chosen.
 
+A strategic direction has been selected — it is in selectedStrategy, with the full strategy resolved alongside it. That choice is settled and it is yours to develop, not to revisit. The personality you write is this direction's personality: a CONNECTION strategy and a COMPETITION strategy for the same product do not share a voice. The directions that were not chosen are not in the state, and you do not need them.
+
 - personality: traits as adjectives, holding a tension rather than stacking compliments.
 - principles: rules the brand holds to. Each one must be able to rule something out — if it cannot reject a design, a word or a decision, rewrite it.
 - namingTerritories: genuinely distinct directions, not variations on one idea. Each needs a rationale tying it to the positioning, and example names that could plausibly be the brand. Territories that would appeal to different kinds of customer are more useful than territories that differ only in sound.
@@ -167,23 +210,21 @@ Translate the positioning and personality into a visual system. This is a brief 
 - mood: the feeling the system produces when someone lands on it for the first time.
 - avoid: the visual choices that would misrepresent this brand specifically. Generic warnings are wasted space — name the tempting mistake for this brand, the thing a designer would reach for by default and get wrong.`,
 
-  selectedStrategy: `# This step: selected strategy
+  strategyOptions: BATTLE_INSTRUCTIONS,
 
-Narrow the exploration to one direction and commit to it. This is a decision, not a summary.
-
-- Pick one name from the naming territories already explored, and say which territory it came from. Do not invent a name from a territory that is not in the state; if none of the names fit, choose the best territory and name from inside it.
-- Pick or refine one tagline from the directions already explored.
-- Write the positioning statement as a single sentence someone could repeat from memory.
-- rationale: why this beat the alternatives, in terms of the audience and the positioning — not in terms of taste.
-- rejectedAlternatives: what you set aside and why, so the choice stays auditable and nobody relitigates it from scratch later.`,
+  // Never sent: choosing between the strategies is a human decision, and the
+  // step throws rather than calling the model. Present because every section
+  // needs an entry.
+  selectedStrategy:
+    'Choosing between the strategy options is not a model decision. This step is never run against the model.',
 
   stressTests: `# This step: stress tests
 
-Try to break the selected strategy. A stress test that everything passes is a test that was not run — your job here is adversarial, and finding a real problem is a success.
+Try to break the chosen direction as it now stands — its positioning, its personality, its naming and tagline candidates, and its visual direction together. The risks already recorded against the chosen strategy are a starting point, not a substitute: go past them. A stress test that everything passes is a test that was not run — your job here is adversarial, and finding a real problem is a success.
 
 Cover at least these dimensions, one entry each, and add any that matter for this brand specifically:
 
-- misreading: the plausible wrong reading of the name or tagline. Read it fast, out of context, by someone who is not paying attention.
+- misreading: the plausible wrong reading of the leading name and tagline candidates in shape. Read them fast, out of context, by someone who is not paying attention.
 - competitor collision: how the position holds if a well-funded incumbent claims the same ground next quarter.
 - scale: whether the brand still works two products and one new market from now, or whether it has painted itself into the first use case.
 - audience edge: how it reads to an adjacent audience the brand will inevitably attract but was not designed for.
@@ -200,8 +241,9 @@ Check at least:
 - positioning against discovery: does the position serve the audience and need that were identified?
 - shape against positioning: does the personality express this position, or a more comfortable one?
 - visualDirection against shape: would this visual system read as this personality to someone who never sees the words?
-- selectedStrategy against all three: does the chosen name and line carry the positioning and personality, or was it chosen for sound alone?
-- stressTests against selectedStrategy: are there unresolved high-severity findings that the strategy has not answered?
+- shape and visualDirection against the chosen strategy: do they express the direction that was actually selected, or have they drifted toward a safer or more familiar one? A CONNECTION strategy developed with a competitive, status-driven voice is this check's main catch.
+- the chosen strategy against its own recorded risks: has the development so far walked into a risk the strategy itself named?
+- stressTests against the chosen strategy: are there unresolved high-severity findings that have not been answered?
 
 For each contradiction found: which sections disagree, the conflict stated concretely, a severity, and how to reconcile them. Set coherent to true only if no high-severity issue was found. Also record strengths — what holds together well — so a later revision does not break something that was working.`,
 
@@ -209,7 +251,9 @@ For each contradiction found: which sections disagree, the conflict stated concr
 
 Lock the package. Everything here must already be present in the state or follow directly from it; this step consolidates and completes, it does not introduce new strategy.
 
-Carry the name, tagline and positioning statement through from the selected strategy. Where a stress test or consistency issue recommended a change and that change is within this step's reach — wording, emphasis, a visual caution — apply it and let the resolution show in the package. Where it is not, leave it be rather than quietly redesigning.
+Choose the name and the tagline. The naming territories and tagline directions in shape are the candidates, and the choice is yours to make here — commit to one of each, from what is already explored, rather than inventing a new one at the last moment. If none of the names truly fits, take the strongest territory and name from inside it.
+
+Carry the positioning statement through from the chosen strategy. Where a stress test or consistency issue recommended a change and that change is within this step's reach — wording, emphasis, a visual caution, avoiding a name that misreads — apply it and let the resolution show in the package. Where it is not, leave it be rather than quietly redesigning.
 
 - narrative: the elevator pitch in one paragraph. This is the brand explaining itself to a stranger who has thirty seconds.
 - voice: the tone, plus concrete does and donts at the level of words and constructions a writer can actually follow.
@@ -345,6 +389,87 @@ export function buildCategoryRetryPrompt(
 A previous attempt returned the category "${rejectedCategory}", which failed the specificity test.${examples}
 
 Write a category that could not describe those products. Name what the product actually is and who it is for, in the words a user would use. Do not reach for "platform", "solution", "ecosystem" or "experience" to do the work — those are the words that made the last attempt fail. Length is not specificity: a longer vague phrase is still vague.`;
+}
+
+export type BattlePromptInput = {
+  discovery: string;
+  /** The positioning anchor, when Phase 3 has already run. */
+  positioning?: string;
+  /** The assigned archetypes, with their appeal and angle. */
+  directions: Array<{ direction: string; coreAppeal: string; typicalAngle: string }>;
+};
+
+/** The BRAND BATTLE user turn. */
+export function buildBattlePrompt(input: BattlePromptInput): string {
+  const sections: string[] = [
+    `Here is the discovery object. This is the fixed ground — every strategy is about this product, for this audience, solving this problem.
+
+<discovery>
+${input.discovery}
+</discovery>`,
+  ];
+
+  sections.push(
+    input.positioning === undefined
+      ? `No positioning has been committed to yet. Each strategy derives its own positioning straight from discovery, which means you are exploring more broadly — the strategies may stake out different value propositions, not only different framings of one.`
+      : `A positioning has already been committed to. Use it as the anchor.
+
+<positioning>
+${input.positioning}
+</positioning>
+
+Each strategy remains a valid variant of this same core value proposition, framed through its own direction. Diverge from each other, not from this.`,
+  );
+
+  sections.push(`Build one strategy for each of these directions, in this order.
+
+<directions>
+${input.directions
+  .map((d) => `- ${d.direction} — appeals to: ${d.coreAppeal}. Angle: "${d.typicalAngle}"`)
+  .join('\n')}
+</directions>
+
+Set the direction field of each strategy to its assigned label.`);
+
+  sections.push(
+    'For each strategy also write uniqueClaim — the underlying bet in one short plain line — and primarySegment, a few words naming who it is mainly for. These are how the strategies get checked against each other, so write them plainly and do not make two of them say the same thing.',
+  );
+
+  return sections.join('\n\n');
+}
+
+/** One reason a strategy has to be rebuilt. */
+export type CollisionReason = {
+  direction: string;
+  /** The direction it collided with, where the problem is a collision. */
+  collidedWith?: string;
+  /** What to do about it, phrased as an instruction. */
+  instruction: string;
+};
+
+/**
+ * The retry turn for a single strategy that failed the distinctness check.
+ *
+ * Only the offending strategy is rebuilt, and it is told exactly what it collided
+ * with and on which axis. Regenerating the whole batch would throw away work that
+ * passed, and a vague "make them more different" tends to produce cosmetic edits.
+ */
+export function buildStrategyRetryPrompt(
+  original: string,
+  reason: CollisionReason,
+  otherStrategies: string,
+): string {
+  return `${original}
+
+A previous attempt produced a ${reason.direction} strategy that does not stand apart. ${reason.instruction}
+
+Here are the other strategies, which are staying as they are. Yours must not overlap with them.
+
+<other_strategies>
+${otherStrategies}
+</other_strategies>
+
+Return only the rebuilt ${reason.direction} strategy. Keep its direction field set to ${reason.direction}. Do not adjust the others, and do not resolve the overlap by making your strategy vaguer — a strategy that says less is not a strategy that differs more.`;
 }
 
 /** The user-turn prompt: the state, then the ask. */

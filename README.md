@@ -9,7 +9,8 @@ step four, instead of being re-derived and quietly contradicted.
 
 Built from [docs/brandstate-spec.md](docs/brandstate-spec.md) (Phase 1), the Phase 2
 DISCOVER spec ([docs/discover-endpoint.md](docs/discover-endpoint.md)) and the Phase 3
-POSITION spec ([docs/position-endpoint.md](docs/position-endpoint.md)).
+POSITION spec ([docs/position-endpoint.md](docs/position-endpoint.md)) and the Phase 4
+BRAND BATTLE spec ([docs/battle-endpoint.md](docs/battle-endpoint.md)).
 
 ## Install
 
@@ -133,6 +134,64 @@ proceeding silently is not.
 Status codes, the provenance hash, the optional competitor lookup, and the decisions
 the spec left open are in [docs/position-endpoint.md](docs/position-endpoint.md).
 
+## The BRAND BATTLE endpoint
+
+Phase 4 generates several genuinely different strategic directions for the same
+problem, so a person can compare trade-offs instead of rubber-stamping the first
+answer.
+
+```bash
+curl -s localhost:3000/api/battle -H 'content-type: application/json'   -d '{"discovery":{...},"positioning":{...}}'
+```
+
+It returns a bare array — one strategy per direction, each with its own positioning,
+strengths, risks, audience fit, differentiation and rationale. Nothing is ranked,
+scored or recommended.
+
+Strategies are built against named archetypes (`CONNECTION`, `OUTCOMES`,
+`COMPETITION`, `TRUST`, `ACCESSIBILITY`, `CRAFT`, `REBELLION`), chosen to sit as far
+apart as possible rather than taken off the top of the list. Pass `directions` to
+force them, or `count` to get more than three.
+
+The hard requirement is that each must be *meaningfully* different, which is easy to
+ask for and easy to fake. It is enforced three times: archetypes are picked far apart
+before anything is generated, the batch is written in one call so the model
+differentiates as it goes, and the result is then checked on four axes — duplicated
+direction, same audience slice, same failure modes, same underlying claim. When two
+collide, only the offending strategy is rebuilt, told exactly what it hit:
+
+```
+Your OUTCOMES strategy's differentiation is functionally identical to CONNECTION's —
+both come down to "we connect owners to operators who have run this playbook".
+```
+
+If they still collide after that, the request fails rather than returning the same
+idea twice.
+
+### Choosing is a human decision
+
+The pipeline will not pick for you. `brandstate run` stops at the checkpoint, saves
+the work so far, and waits:
+
+```bash
+brandstate run "an idea"               # stops with three directions on the table
+brandstate show                        # read them
+brandstate select TRUST --reason "..."  # a person decides
+brandstate run "an idea"               # resumes and finishes
+```
+
+`selectedStrategy` is a pointer into `strategyOptions`, not a copy, so there is one
+copy of the chosen strategy and it cannot drift. Every candidate stays on record,
+including the ones not picked. Once a direction is chosen, downstream steps see it
+resolved in full and never see the rejected ones — so nothing can quietly develop a
+strategy nobody selected.
+
+`brandstate battle <discovery.json>` runs the step alone, with `--directions`,
+`--count` and `--positioning`.
+
+Full details, including the four checks and the pipeline reordering, are in
+[docs/battle-endpoint.md](docs/battle-endpoint.md).
+
 ## Use it as a library
 
 ```ts
@@ -201,6 +260,13 @@ endpoints share one prompt and one schema each and cannot drift apart. A pipelin
 takes the first pass only: it cannot answer discovery's questions, so it proceeds past
 them and records what it assumed, and anything unresolved arrives in the state as
 `openQuestions`.
+
+**The chosen direction gates what comes after it.** `strategyOptions` holds every
+candidate; `selectedStrategy` points at one rather than copying it. Once chosen,
+`serializeForPrompt` sends the resolved strategy and omits the rejected candidates, so
+a later step cannot develop one nobody picked. `resolveSelectedStrategy` returns
+`undefined` rather than defaulting to the first option — "nobody decided" must not
+silently become "the first one wins".
 
 **Positioning records what it was derived from.** `positioning.sourceDiscoveryHash`
 fingerprints the discovery used, so `isPositioningStale()` can tell current
@@ -280,7 +346,7 @@ departing from it; the field names and section structure are unchanged.
 ## Tests
 
 ```bash
-npm test        # 210 tests, no API key and no network
+npm test        # 302 tests, no API key and no network
 npm run typecheck   # covers src and test
 ```
 
@@ -297,9 +363,14 @@ mismatched gap/question lists, and that sparse output is accepted.
 model), the category regenerate loop and its failure mode, the filler backstop in both
 directions, the mapping and what it deliberately drops, the provenance hash, and the
 optional lookup — including that a lookup which throws cannot fail the step.
+`test/battle.test.ts` covers BRAND BATTLE: the archetype axes, that direction
+selection really maximises the minimum spread (verified exhaustively against every
+combination), all four distinctness checks plus the risk and length rules, that only
+the later of two colliding strategies is blamed, the targeted rebuild and its failure
+mode, and that selection is a pointer carrying no copy.
 `test/server.test.ts` starts a real server on an ephemeral port and drives it over
-HTTP, covering routing, every status code, and that a 500 does not leak
-internals.
+HTTP, covering routing, every status code, that a 500 does not leak internals, and
+that no strategy comes back carrying a score or a rank.
 
 `test/client.test.ts` runs `BrandClient` against a fake transport, so the request
 body is checked without credentials: the model and thinking configuration, the

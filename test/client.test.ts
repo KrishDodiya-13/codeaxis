@@ -14,6 +14,7 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { BrandClient, DEFAULT_MODEL, RefusalError, SectionParseError } from '../src/client.ts';
 import { METHODOLOGY } from '../src/prompts.ts';
 import {
+  BattleResultSchema,
   DiscoverResultSchema,
   DiscoverySchema,
   PositionResultSchema,
@@ -140,16 +141,23 @@ describe('the request BrandClient builds', () => {
     const modelFacing: Record<string, z.ZodType> = {
       discovery: DiscoverResultSchema,
       positioning: PositionResultSchema,
+      strategyOptions: BattleResultSchema,
       stressTests: StressTestsResultSchema,
       shape: sectionSchemas.shape,
       visualDirection: sectionSchemas.visualDirection,
-      selectedStrategy: sectionSchemas.selectedStrategy,
       consistency: sectionSchemas.consistency,
       finalBrand: sectionSchemas.finalBrand,
     };
 
-    // Every section must be covered, so adding one cannot skip this check.
-    assert.deepEqual(Object.keys(modelFacing).sort(), [...SECTION_ORDER].sort());
+    // selectedStrategy is the one section with no model-facing schema: choosing a
+    // direction is a human decision, so nothing is ever asked of the model.
+    const NOT_MODEL_FACING = ['selectedStrategy'];
+
+    // Every other section must be covered, so adding one cannot skip this check.
+    assert.deepEqual(
+      [...Object.keys(modelFacing), ...NOT_MODEL_FACING].sort(),
+      [...SECTION_ORDER].sort(),
+    );
 
     for (const [section, schema] of Object.entries(modelFacing)) {
       const properties = (zodOutputFormat(schema).schema as Record<string, any>).properties as Record<

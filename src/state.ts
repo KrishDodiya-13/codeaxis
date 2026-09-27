@@ -12,15 +12,27 @@ import type {
   BrandStateSection,
   Project,
   SectionValue,
+  StrategyOption,
 } from './types.ts';
 
 /** The order sections are derived in. Each step depends on the ones before it. */
+/**
+ * The order sections are derived in. Each step depends on the ones before it.
+ *
+ * Strategy selection sits ahead of `shape` and `visualDirection` on purpose: a
+ * direction is chosen first, and only then developed. Phase 1's suggested flow put
+ * selection last, after the creative work; Phase 4 reverses that, and reversing it
+ * is the point — developing three directions in full and then picking one wastes
+ * most of the work, and picking after the fact tends to rubber-stamp whatever was
+ * already built.
+ */
 export const SECTION_ORDER: readonly BrandStateSection[] = [
   'discovery',
   'positioning',
+  'strategyOptions',
+  'selectedStrategy',
   'shape',
   'visualDirection',
-  'selectedStrategy',
   'stressTests',
   'consistency',
   'finalBrand',
@@ -67,6 +79,7 @@ export function createInitialState(project: Project): BrandState {
       mood: '',
       avoid: [],
     },
+    strategyOptions: [],
     stressTests: [],
     consistency: { coherent: false, issues: [], strengths: [] },
   };
@@ -110,6 +123,31 @@ export function isSectionPopulated(state: BrandState, section: BrandStateSection
     default:
       return true;
   }
+}
+
+/**
+ * The chosen strategy in full, looked up from `strategyOptions`.
+ *
+ * Returns `undefined` when nothing has been chosen — deliberately, rather than
+ * falling back to the first option. Downstream steps must read the strategy that
+ * was actually selected, and quietly defaulting to `strategyOptions[0]` would turn
+ * "nobody has decided yet" into "the first candidate wins", which is the exact
+ * rubber-stamping this phase exists to prevent.
+ *
+ * Also returns `undefined` when the pointer names a direction that is not in
+ * `strategyOptions` — a state that has been edited inconsistently — so callers
+ * handle a dangling pointer rather than reading past it.
+ */
+export function resolveSelectedStrategy(state: BrandState): StrategyOption | undefined {
+  if (state.selectedStrategy === undefined) return undefined;
+  return state.strategyOptions.find(
+    (option) => option.direction === state.selectedStrategy!.direction,
+  );
+}
+
+/** Whether `selectedStrategy` names a direction that no longer exists in the options. */
+export function hasDanglingSelection(state: BrandState): boolean {
+  return state.selectedStrategy !== undefined && resolveSelectedStrategy(state) === undefined;
 }
 
 /** The sections derived so far, in pipeline order. */
@@ -211,5 +249,16 @@ export function serializeForPrompt(state: BrandState): string {
   for (const section of populatedSections(state)) {
     view[section] = state[section];
   }
+
+  // Once a direction is chosen, downstream steps see that strategy resolved in
+  // full and the rejected candidates not at all. Sending all three would invite a
+  // later step to develop whichever it liked best, which is the decision a human
+  // already made. Before a choice, the candidates are the state and are sent as-is.
+  const selected = resolveSelectedStrategy(state);
+  if (selected !== undefined) {
+    delete view.strategyOptions;
+    view.selectedStrategy = { ...state.selectedStrategy, strategy: selected };
+  }
+
   return stableStringify(view, 2);
 }

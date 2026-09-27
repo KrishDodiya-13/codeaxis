@@ -10,15 +10,35 @@ import type { SectionDeriver, Usage } from './client.ts';
 import {
   ConsistencySchema,
   FinalBrandSchema,
-  SelectedStrategySchema,
   ShapeSchema,
   StressTestsResultSchema,
   VisualDirectionSchema,
 } from './schemas.ts';
+import { battle } from './battle.ts';
 import { discover, toDiscoverySection } from './discover.ts';
 import { position, toPositioningSection } from './position.ts';
 import { applyDelta, isSectionPopulated, serializeForPrompt } from './state.ts';
 import type { BrandState, BrandStateSection, SectionValue } from './types.ts';
+
+/**
+ * Thrown when the pipeline reaches strategy selection with nothing chosen.
+ *
+ * Not a failure — a checkpoint. BRAND BATTLE produces options for a human to
+ * compare, and having the pipeline pick one would be exactly the silent AI
+ * judgement the phase exists to prevent.
+ */
+export class StrategySelectionRequiredError extends Error {
+  readonly directions: string[];
+
+  constructor(directions: string[]) {
+    super(
+      `A strategy direction has to be chosen before the pipeline can continue. ` +
+        `Options: ${directions.join(', ')}. Choosing is a human decision, not the model's.`,
+    );
+    this.name = 'StrategySelectionRequiredError';
+    this.directions = directions;
+  }
+}
 
 /** Thrown when a step is run before the sections it reads from have been derived. */
 export class MissingDependencyError extends Error {
@@ -92,7 +112,7 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
   shape: {
     section: 'shape',
     label: 'Shape (personality, naming, messaging)',
-    dependsOn: ['discovery', 'positioning'],
+    dependsOn: ['discovery', 'positioning', 'selectedStrategy'],
     async derive(deriver, state) {
       return deriver.deriveSection('shape', serializeForPrompt(state), ShapeSchema);
     },
@@ -101,25 +121,46 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
   visualDirection: {
     section: 'visualDirection',
     label: 'Visual direction',
-    dependsOn: ['discovery', 'positioning', 'shape'],
+    dependsOn: ['discovery', 'positioning', 'selectedStrategy', 'shape'],
     async derive(deriver, state) {
       return deriver.deriveSection('visualDirection', serializeForPrompt(state), VisualDirectionSchema);
     },
   },
 
+  strategyOptions: {
+    section: 'strategyOptions',
+    label: 'Strategy options (brand battle)',
+    dependsOn: ['discovery'],
+    async derive(deriver, state) {
+      // positioning is optional for BATTLE by design: run without it to explore
+      // broadly before committing, or with it so every strategy is a variant of one
+      // value proposition. In the pipeline it has always run, so it is passed.
+      const result = await battle(deriver, {
+        discovery: state.discovery,
+        ...(isSectionPopulated(state, 'positioning') ? { positioning: state.positioning } : {}),
+      });
+      return { value: result.value, usage: result.usage };
+    },
+  },
+
   selectedStrategy: {
     section: 'selectedStrategy',
-    label: 'Selected strategy',
-    dependsOn: ['positioning', 'shape'],
-    async derive(deriver, state) {
-      return deriver.deriveSection('selectedStrategy', serializeForPrompt(state), SelectedStrategySchema);
+    label: 'Strategy selection',
+    dependsOn: ['strategyOptions'],
+    async derive(_deriver, state) {
+      // Choosing between the strategies is a human decision, never silent AI
+      // judgement — so this step has no model call to make. It stops the pipeline
+      // and hands back the options instead.
+      throw new StrategySelectionRequiredError(
+        state.strategyOptions.map((option) => option.direction),
+      );
     },
   },
 
   stressTests: {
     section: 'stressTests',
     label: 'Stress tests',
-    dependsOn: ['selectedStrategy'],
+    dependsOn: ['selectedStrategy', 'shape', 'visualDirection'],
     async derive(deriver, state) {
       // The schema wraps the array because a structured-output format needs an
       // object at its root; the section itself is the bare array.
@@ -135,7 +176,7 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
   consistency: {
     section: 'consistency',
     label: 'Consistency check',
-    dependsOn: ['discovery', 'positioning', 'shape', 'visualDirection', 'selectedStrategy'],
+    dependsOn: ['discovery', 'positioning', 'selectedStrategy', 'shape', 'visualDirection'],
     async derive(deriver, state) {
       return deriver.deriveSection('consistency', serializeForPrompt(state), ConsistencySchema);
     },
