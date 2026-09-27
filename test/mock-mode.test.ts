@@ -21,6 +21,7 @@ import {
   buildBrandDna,
   compileBrandOs,
   createDeriver,
+  discover,
   selectStrategy,
   resolveAiMode,
 } from '../src/index.ts';
@@ -389,3 +390,86 @@ describe('the cache is scoped to a project and re-validated', () => {
     assert.equal(count(), before, 'project-b should still be cached');
   });
 });
+
+describe('the Discover flow converges in mock mode', () => {
+  /**
+   * The bug this pins: submitting an answer returned the identical discovery object, so
+   * the same follow-up question was asked forever and the flow could never finish. The
+   * mock was selecting a fixture by section alone and ignoring the request, so a
+   * refinement was indistinguishable from a first call.
+   */
+  const idea = 'A tool that turns agency delivery records into a productised offer';
+
+  it('asks a question on the first call', async () => {
+    const mock = new MockDeriver();
+    const first = await discover(mock, { idea });
+
+    assert.equal(first.value.followUpQuestions.length, 1);
+    assert.equal(first.value.missingInformation.length, 1);
+  });
+
+  it('closes the gap once the question is answered, rather than re-asking it', async () => {
+    const mock = new MockDeriver();
+    const first = await discover(mock, { idea });
+    const question = first.value.followUpQuestions[0]!;
+
+    const second = await discover(mock, {
+      idea,
+      priorDiscovery: first.value,
+      answers: { [question]: 'owner' },
+    });
+
+    assert.deepEqual(second.value.followUpQuestions, [], 'the answered question must not return');
+    assert.deepEqual(second.value.missingInformation, [], 'the gap must be closed');
+    assert.notDeepEqual(second.value, first.value, 'the answer must change the result');
+  });
+
+  it('moves the answer into the field it belongs in', async () => {
+    const mock = new MockDeriver();
+    const first = await discover(mock, { idea });
+    const second = await discover(mock, {
+      idea,
+      priorDiscovery: first.value,
+      answers: { [first.value.followUpQuestions[0]!]: 'owner' },
+    });
+
+    // The gap was about who the buyer is, so the answer belongs in targetAudience.
+    assert.match(second.value.targetAudience, /owner is the buyer/i);
+    // And it is no longer an assumption, because it is now stated.
+    assert.deepEqual(second.value.assumptions, []);
+  });
+
+  it('keeps everything the answer did not contradict', async () => {
+    const mock = new MockDeriver();
+    const first = await discover(mock, { idea });
+    const second = await discover(mock, {
+      idea,
+      priorDiscovery: first.value,
+      answers: { [first.value.followUpQuestions[0]!]: 'owner' },
+    });
+
+    assert.equal(second.value.problem, first.value.problem);
+    assert.equal(second.value.userNeed, first.value.userNeed);
+    assert.deepEqual(second.value.goals, first.value.goals);
+    assert.deepEqual(second.value.constraints, first.value.constraints);
+  });
+
+  it('is still deterministic: the same request twice gives the same answer', async () => {
+    const mock = new MockDeriver();
+    const first = await discover(mock, { idea });
+    const answers = { [first.value.followUpQuestions[0]!]: 'owner' };
+
+    const a = await discover(mock, { idea, priorDiscovery: first.value, answers });
+    const b = await discover(mock, { idea, priorDiscovery: first.value, answers });
+    assert.deepEqual(a.value, b.value);
+  });
+
+  it('treats a prior result with no answers as a re-run, not a refinement', async () => {
+    const mock = new MockDeriver();
+    const first = await discover(mock, { idea });
+
+    // No answers supplied, so there is nothing to merge and the question should stand.
+    const rerun = await discover(mock, { idea, priorDiscovery: first.value });
+    assert.deepEqual(rerun.value.followUpQuestions, first.value.followUpQuestions);
+  });
+})

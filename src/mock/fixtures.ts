@@ -44,6 +44,29 @@ export const project: Project = {
  * Built so `toDiscoverySection` maps it exactly onto `discovery` below, which
  * keeps the mapping honest: if the two drift, a test fails.
  */
+/**
+ * Discovery after the follow-up questions have been answered.
+ *
+ * The gap is closed and the answer has moved into the field it belongs in — which is
+ * what the rediscover instructions ask a real model to do. Without a second fixture the
+ * mock returned the same open question forever, so the Discover flow could never
+ * converge and the UI could not be tested past the first round.
+ *
+ * `assumptions` loses the entry the answer superseded: once the buyer is stated, it is
+ * no longer assumed.
+ */
+export const discoverResultRefined: DiscoverResult = {
+  problem: 'Agency owners sell their own time and cannot step away without revenue stopping.',
+  targetAudience:
+    'Owners of 5-to-20-person service agencies who have tried packaging an offer once and abandoned it. The owner is the buyer, not an operations lead.',
+  userNeed: 'To stop being the bottleneck in their own delivery.',
+  goals: ['Be understood in one sentence by a non-technical owner', 'Signal operational rigour, not hustle'],
+  constraints: ['Sold founder-to-founder, not through a sales team', 'Competes with spreadsheets and habit'],
+  assumptions: [],
+  missingInformation: [],
+  followUpQuestions: [],
+};
+
 export const discoverResult: DiscoverResult = {
   problem: 'Agency owners sell their own time and cannot step away without revenue stopping.',
   targetAudience: 'Owners of 5-to-20-person service agencies who have tried packaging an offer once and abandoned it.',

@@ -25,6 +25,7 @@ import {
   brandOsDraft,
   consistency,
   discoverResult,
+  discoverResultRefined,
   finalBrandDraft,
   naming,
   personality,
@@ -77,15 +78,32 @@ const dimensionsChecked = CONSISTENCY_DIMENSIONS.map((dimension) => ({
 }));
 
 /**
+ * Whether this discovery call is folding in answers rather than starting from the idea.
+ *
+ * Keyed on the `<answers>` block that only `buildRediscoverPrompt` emits. Deliberately
+ * derived from the request rather than counted per instance: the mock has to be
+ * deterministic, and a call counter would give different answers to the same request
+ * depending on what happened before it.
+ */
+function isRefinement(userPrompt: string | undefined): boolean {
+  return userPrompt !== undefined && userPrompt.includes('<answers>');
+}
+
+/**
  * The candidates for each section, in the order they are tried.
  *
  * A section with more than one entry is one that different stages ask for differently;
  * the first that validates wins.
  */
-function candidatesFor(section: BrandStateSection): unknown[] {
+function candidatesFor(section: BrandStateSection, userPrompt: string | undefined): unknown[] {
   switch (section) {
     case 'discovery':
-      return [discoverResult];
+      // Discovery is the one stage that is called twice with different meaning: once for
+      // the idea, then again to fold in the user's answers. Returning the same object
+      // both times left the same question open forever, so the flow could never
+      // converge. The refinement prompt is the only one carrying an <answers> block, so
+      // that is what distinguishes them.
+      return [isRefinement(userPrompt) ? discoverResultRefined : discoverResult];
     case 'positioning':
       return [positionResult];
     case 'strategyOptions':
@@ -174,7 +192,7 @@ export class MockDeriver implements SectionDeriver {
 
     const issues: string[] = [];
     let validationMs = 0;
-    for (const candidate of candidatesFor(section)) {
+    for (const candidate of candidatesFor(section, options.userPrompt)) {
       // The caller's own schema is the judge, exactly as in live mode. A fixture that no
       // longer fits is a failure here rather than a surprise three stages later.
       const validationStart = performance.now();
