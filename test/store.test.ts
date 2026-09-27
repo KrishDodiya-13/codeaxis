@@ -84,7 +84,7 @@ describe('renderMarkdown', () => {
       'Positioning',
       'Shape',
       'Visual direction',
-      'Selected strategy',
+      'Strategy options',
       'Stress tests',
       'Consistency',
       'Final brand',

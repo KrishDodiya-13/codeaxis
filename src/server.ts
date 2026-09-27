@@ -11,6 +11,12 @@ import { BrandClient, RefusalError, SectionParseError } from './client.ts';
 import type { BrandClientOptions, SectionDeriver } from './client.ts';
 import { DiscoverInputError, discover, validateDiscoverRequest } from './discover.ts';
 import {
+  BattleInputError,
+  IndistinctStrategiesError,
+  battle,
+  validateBattleRequest,
+} from './battle.ts';
+import {
   DiscoveryIncompleteError,
   PositionInputError,
   VagueCategoryError,
@@ -19,6 +25,7 @@ import {
   validatePositionRequest,
 } from './position.ts';
 import type { PositionOptions } from './position.ts';
+import type { BattleOptions } from './battle.ts';
 
 /** Requests larger than this are rejected rather than buffered. */
 const MAX_BODY_BYTES = 1_000_000;
@@ -33,15 +40,26 @@ export type ServerOptions = {
    * entirely, POSITION does no external lookups — which is the supported default.
    */
   position?: PositionOptions;
+  /** Options for BRAND BATTLE, including the distinctness thresholds. */
+  battle?: BattleOptions;
 } & BrandClientOptions;
 
 export function createDiscoverServer(options: ServerOptions = {}): Server {
-  const { deriver: injected, log, position: positionOptions = {}, model, effort, maxTokens, client } = options;
+  const {
+    deriver: injected,
+    log,
+    position: positionOptions = {},
+    battle: battleOptions = {},
+    model,
+    effort,
+    maxTokens,
+    client,
+  } = options;
   const deriver = injected ?? new BrandClient({ model, effort, maxTokens, client });
   const write = log ?? ((message: string) => process.stderr.write(`${message}\n`));
 
   return createServer((request, response) => {
-    handle(request, response, deriver, write, positionOptions).catch((error: unknown) => {
+    handle(request, response, deriver, write, positionOptions, battleOptions).catch((error: unknown) => {
       // The handler deals with expected failures itself; reaching here means a
       // bug, so log it and return a generic 500 rather than leaking internals.
       write(`unhandled error: ${String(error)}`);
@@ -57,6 +75,7 @@ async function handle(
   deriver: SectionDeriver,
   log: (message: string) => void,
   positionOptions: PositionOptions,
+  battleOptions: BattleOptions,
 ): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://localhost');
   const route = `${request.method} ${url.pathname}`;
@@ -79,9 +98,10 @@ async function handle(
     return;
   }
 
-  if (url.pathname !== '/api/discover' && url.pathname !== '/api/position') {
+  const ROUTES = ['/api/discover', '/api/position', '/api/battle'];
+  if (!ROUTES.includes(url.pathname)) {
     sendJson(response, 404, {
-      error: `No route for ${url.pathname}. The endpoints are POST /api/discover and POST /api/position.`,
+      error: `No route for ${url.pathname}. The endpoints are ${ROUTES.map((r) => `POST ${r}`).join(', ')}.`,
     });
     return;
   }
@@ -133,6 +153,22 @@ async function handle(
       return;
     }
 
+    if (url.pathname === '/api/battle') {
+      const battleRequest = validateBattleRequest(parsed);
+      const result = await battle(deriver, battleRequest, battleOptions);
+
+      log(
+        `${route} 200 ${Date.now() - startedAt}ms ` +
+          `directions=${result.value.map((option) => option.direction).join('/')} ` +
+          `tokens=${result.usage.inputTokens}/${result.usage.outputTokens}`,
+      );
+
+      // The body is a bare array, one strategy per direction, in the order the
+      // directions were assigned. Nothing here ranks them.
+      sendJson(response, 200, result.value);
+      return;
+    }
+
     const positionRequest = validatePositionRequest(parsed);
     const result = await position(deriver, positionRequest, positionOptions);
 
@@ -151,7 +187,16 @@ async function handle(
 
     sendJson(response, 200, result.value);
   } catch (error) {
-    if (error instanceof DiscoverInputError || error instanceof PositionInputError) {
+    if (error instanceof IndistinctStrategiesError) {
+      log(`${route} 502 strategies not distinct`);
+      sendJson(response, 502, { error: error.message, collisions: error.reasons });
+      return;
+    }
+    if (
+      error instanceof DiscoverInputError ||
+      error instanceof PositionInputError ||
+      error instanceof BattleInputError
+    ) {
       log(`${route} 400 ${error.message}`);
       sendJson(response, 400, { error: error.message });
       return;

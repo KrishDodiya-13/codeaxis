@@ -13,6 +13,7 @@ export type {
   SectionValue,
   SelectedStrategy,
   Shape,
+  StrategyOption,
   StressTest,
   TaglineDirection,
   VisualDirection,
@@ -30,6 +31,8 @@ export {
   PositioningSchema,
   SelectedStrategySchema,
   ShapeSchema,
+  StrategyOptionSchema,
+  BattleResultSchema,
   StressTestSchema,
   VisualDirectionSchema,
   parseBrandState,
@@ -43,8 +46,10 @@ export {
   cloneState,
   createInitialState,
   diffStates,
+  hasDanglingSelection,
   isSectionPopulated,
   nextSection,
+  resolveSelectedStrategy,
   populatedSections,
   serializeForPrompt,
   stableStringify,
@@ -61,7 +66,13 @@ export {
 } from './client.ts';
 export type { BrandClientOptions, DeriveOptions, Effort, SectionDeriver, Usage } from './client.ts';
 
-export { MissingDependencyError, STEPS, missingDependencies, runStep } from './steps.ts';
+export {
+  MissingDependencyError,
+  STEPS,
+  StrategySelectionRequiredError,
+  missingDependencies,
+  runStep,
+} from './steps.ts';
 
 export {
   brandFromIdea,
@@ -112,6 +123,41 @@ export type {
 
 export { createWebSearchCompetitorLookup, parseCompetitorList } from './competitors.ts';
 export type { WebSearchLookupOptions } from './competitors.ts';
+
+export {
+  ARCHETYPES,
+  DIRECTIONS,
+  InvalidDirectionsError,
+  archetypeDistance,
+  chooseDirections,
+  contentWords,
+  isDirection,
+  listOverlapRatio,
+  minimumSpread,
+  normalizeDirections,
+  overlapRatio,
+} from './archetypes.ts';
+export type { Archetype, Direction } from './archetypes.ts';
+
+export {
+  BattleInputError,
+  DEFAULT_STRATEGY_COUNT,
+  DEFAULT_THRESHOLDS,
+  IndistinctStrategiesError,
+  battle,
+  countSentences,
+  findDistinctnessIssues,
+  resolveDirections,
+  selectStrategy,
+  toStrategyOption,
+  validateBattleRequest,
+} from './battle.ts';
+export type {
+  BattleOptions,
+  BattleRequest,
+  DistinctnessThresholds,
+  StrategyCandidate,
+} from './battle.ts';
 
 export { createDiscoverServer, listen } from './server.ts';
 export type { ServerOptions } from './server.ts';

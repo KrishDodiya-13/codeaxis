@@ -9,6 +9,7 @@
  * sent to the model, so they are the field-level instructions for each step.
  */
 import { z } from 'zod';
+import { DIRECTIONS } from './archetypes.ts';
 import type { BrandState, BrandStateSection } from './types.ts';
 
 /**
@@ -237,15 +238,85 @@ export const VisualDirectionSchema = z.object({
   avoid: z.array(text()).min(1).describe('Visual choices that would misrepresent the brand.'),
 });
 
-export const SelectedStrategySchema = z.object({
-  name: text('The chosen brand name.'),
-  tagline: text(),
-  namingTerritory: text('Which naming territory the name came from.'),
-  positioningStatement: text('The positioning in one sentence.'),
-  rationale: z.array(text()).min(1).describe('Why this option beat the alternatives.'),
-  rejectedAlternatives: z
+/**
+ * One candidate strategy from BRAND BATTLE.
+ *
+ * The `min(1)` on `risks` is load-bearing rather than cosmetic: a direction with no
+ * stated risk is a generation failure, because every strategic bet costs something.
+ */
+export const StrategyOptionSchema = z.object({
+  direction: z
+    .enum(DIRECTIONS)
+    .describe('The archetype this strategy is built around. Use the one you were assigned.'),
+  positioning: text(
+    'This strategy version of the positioning statement, in two or three sentences. Same problem and audience, framed through this direction. Do not reuse another strategy wording.',
+  ),
+  strengths: z
     .array(text())
-    .describe('Directions considered and set aside, so the choice stays auditable.'),
+    .min(1)
+    .describe(
+      'What this direction genuinely has going for it, tied to the discovery input. Not generic praise: "builds community" is not a strength, it is a restatement of the archetype.',
+    ),
+  risks: z
+    .array(text())
+    .min(1)
+    .describe(
+      'Honest downsides and failure modes of this direction. At least one substantial risk is required — every strategic bet costs something, and a direction with nothing to lose has not been thought through.',
+    ),
+  audienceFit: text(
+    'Which slice of the target audience this resonates with most, and who it resonates with less. Name both. A direction that appeals to everyone equally is not differentiated.',
+  ),
+  differentiation: text(
+    'How this strategy stands apart from competitors and alternatives, seen through this direction specifically.',
+  ),
+  rationale: z
+    .array(text())
+    .min(1)
+    .describe(
+      'Why this direction is a credible fit for this input. Each line must reference something specific in discovery or positioning.',
+    ),
+});
+
+/**
+ * A strategy plus the short canonical fields the distinctness check compares.
+ *
+ * The prose fields are too long and too varied to compare lexically — two
+ * strategies making the same bet in different words would slip through. Asking for
+ * the underlying claim and the primary segment as short labels gives the check
+ * something it can actually measure. Both are stripped before the response goes out.
+ */
+export const StrategyCandidateSchema = StrategyOptionSchema.extend({
+  uniqueClaim: text(
+    'The underlying claim of your differentiation, reduced to one short line of plain words. Not a slogan — the bet itself, e.g. "we verify that members are real students". If another strategy could write the same line, your differentiation is not distinct.',
+  ),
+  primarySegment: text(
+    'The slice of the audience this strategy is primarily for, as a short label of a few words, e.g. "first-time hackathon entrants".',
+  ),
+});
+
+export const BattleResultSchema = z.object({
+  strategies: z
+    .array(StrategyCandidateSchema)
+    .min(1)
+    .describe('One strategy per assigned direction, in the order the directions were given.'),
+});
+
+/** A single regenerated strategy, for when one collided with another. */
+export const StrategyRegenerationSchema = z.object({
+  strategy: StrategyCandidateSchema,
+});
+
+/**
+ * The chosen direction — a pointer, not a copy.
+ *
+ * It references a `strategyOptions` entry by direction rather than duplicating its
+ * content, so there is exactly one copy of the chosen strategy detail and no way
+ * for the two to drift. `resolveSelectedStrategy` does the lookup.
+ */
+export const SelectedStrategySchema = z.object({
+  direction: z.enum(DIRECTIONS).describe('Which strategyOptions entry was chosen.'),
+  chosenAt: text('When the choice was made, as an ISO 8601 timestamp.'),
+  reasonChosen: text('Why this one was picked over the others, if a reason was given.').optional(),
 });
 
 export const StressTestSchema = z.object({
@@ -319,6 +390,7 @@ export const BrandStateSchema = z.object({
   positioning: PositioningSchema,
   shape: ShapeSchema,
   visualDirection: VisualDirectionSchema,
+  strategyOptions: z.array(StrategyOptionSchema),
   selectedStrategy: SelectedStrategySchema.optional(),
   stressTests: z.array(StressTestSchema),
   consistency: ConsistencySchema,
@@ -389,14 +461,22 @@ export const BrandStateFileSchema = z.object({
     messagingHierarchy: z.array(LooseMessagingLayerSchema),
   }),
   visualDirection: LooseVisualDirectionSchema,
+  strategyOptions: z.array(
+    z.object({
+      direction: looseText,
+      positioning: looseText,
+      strengths: looseList,
+      risks: looseList,
+      audienceFit: looseText,
+      differentiation: looseText,
+      rationale: looseList,
+    }),
+  ),
   selectedStrategy: z
     .object({
-      name: looseText,
-      tagline: looseText,
-      namingTerritory: looseText,
-      positioningStatement: looseText,
-      rationale: looseList,
-      rejectedAlternatives: looseList,
+      direction: looseText,
+      chosenAt: looseText,
+      reasonChosen: looseText.optional(),
     })
     .optional(),
   stressTests: z.array(
@@ -443,6 +523,7 @@ export const sectionSchemas = {
   positioning: PositioningSchema,
   shape: ShapeSchema,
   visualDirection: VisualDirectionSchema,
+  strategyOptions: z.array(StrategyOptionSchema),
   selectedStrategy: SelectedStrategySchema,
   stressTests: z.array(StressTestSchema),
   consistency: ConsistencySchema,

@@ -4,16 +4,15 @@
  * The JSON is the source of truth; this is for reading. Sections not yet derived
  * are left out rather than shown empty.
  */
-import { isSectionPopulated, populatedSections } from './state.ts';
+import { isSectionPopulated, populatedSections, resolveSelectedStrategy } from './state.ts';
 import type { BrandState } from './types.ts';
 
 export function renderMarkdown(state: BrandState): string {
   const out: string[] = [];
-  const heading = state.finalBrand?.name ?? state.selectedStrategy?.name ?? 'Brand in progress';
+  const heading = state.finalBrand?.name ?? 'Brand in progress';
   out.push(`# ${heading}`, '');
 
   if (state.finalBrand) out.push(`> ${state.finalBrand.tagline}`, '');
-  else if (state.selectedStrategy) out.push(`> ${state.selectedStrategy.tagline}`, '');
 
   out.push('## Project', '');
   out.push(`- **Idea:** ${state.project.idea}`);
@@ -79,14 +78,32 @@ export function renderMarkdown(state: BrandState): string {
     out.push(...renderVisual(state.visualDirection));
   }
 
-  if (state.selectedStrategy) {
-    const s = state.selectedStrategy;
-    out.push('## Selected strategy', '');
-    out.push(`**Name.** ${s.name} (from the ${s.namingTerritory} territory)`, '');
-    out.push(`**Tagline.** ${s.tagline}`, '');
-    out.push(`**Positioning.** ${s.positioningStatement}`, '');
-    out.push(...list('Why this one', s.rationale));
-    out.push(...list('Set aside', s.rejectedAlternatives));
+  if (state.strategyOptions.length > 0) {
+    const selected = resolveSelectedStrategy(state);
+
+    out.push('## Strategy options', '');
+    out.push(
+      selected === undefined
+        ? '_No direction chosen yet._'
+        : `Chosen: **${selected.direction}**${state.selectedStrategy?.chosenAt ? ` (${state.selectedStrategy.chosenAt})` : ''}`,
+      '',
+    );
+    if (state.selectedStrategy?.reasonChosen) {
+      out.push(`Reason: ${state.selectedStrategy.reasonChosen}`, '');
+    }
+
+    // Every option is kept, including the ones not picked, so the road not taken
+    // stays on the record rather than disappearing behind the decision.
+    for (const option of state.strategyOptions) {
+      const mark = option.direction === selected?.direction ? ' — chosen' : '';
+      out.push(`### ${option.direction}${mark}`, '');
+      out.push(option.positioning, '');
+      out.push(...list('Strengths', option.strengths));
+      out.push(...list('Risks', option.risks));
+      out.push(`**Audience fit.** ${option.audienceFit}`, '');
+      out.push(`**Differentiation.** ${option.differentiation}`, '');
+      out.push(...list('Rationale', option.rationale));
+    }
   }
 
   if (state.stressTests.length > 0) {

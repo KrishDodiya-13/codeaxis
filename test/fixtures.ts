@@ -7,6 +7,8 @@
  */
 import type { DeriveOptions, SectionDeriver, Usage } from '../src/client.ts';
 import type { DiscoverResult } from '../src/discover.ts';
+import { toStrategyOption } from '../src/battle.ts';
+import type { StrategyCandidate } from '../src/battle.ts';
 import { hashDiscovery } from '../src/position.ts';
 import type { PositionResult } from '../src/position.ts';
 import type {
@@ -19,6 +21,7 @@ import type {
   Project,
   SelectedStrategy,
   Shape,
+  StrategyOption,
   StressTest,
   VisualDirection,
 } from '../src/types.ts';
@@ -158,13 +161,74 @@ const visualDirection: VisualDirection = {
   avoid: ['Hustle-culture warmth', 'Gradients standing in for depth'],
 };
 
+/**
+ * Three strategy candidates, as BRAND BATTLE returns them internally.
+ *
+ * Deliberately built to pass the distinctness check: different claims, different
+ * primary segments, different risks. `indistinctCandidates` below is the opposite,
+ * for testing the check itself.
+ */
+export const strategyCandidates: StrategyCandidate[] = [
+  {
+    direction: 'CONNECTION',
+    positioning:
+      'The place agency owners find the operators who can run the work without them. Productising is a people problem before it is a process problem.',
+    strengths: ['Addresses the reason past attempts were abandoned: nobody to hand the work to'],
+    risks: ['Needs a supply of operators before it is useful to anyone, so it is thin at launch'],
+    audienceFit:
+      'Best fits owners who have already written the process and stalled on delegation. Less compelling to owners still working out what they repeat.',
+    differentiation:
+      'Unlike template libraries, this connects an owner to people who have run the same playbook elsewhere.',
+    rationale: ['Discovery put the failure at execution, not intent'],
+    uniqueClaim: 'we connect owners to operators who have run this playbook',
+    primarySegment: 'owners stalled on delegation',
+  },
+  {
+    direction: 'COMPETITION',
+    positioning:
+      'Agencies that productise outgrow the ones that do not. Turn your delivery record into an offer that compounds while your competitors keep selling hours.',
+    strengths: ['Appeals to owners benchmarking themselves against faster-growing peers'],
+    risks: ['A status framing can alienate owners who see their craft as the point, narrowing the market'],
+    audienceFit:
+      'Best fits ambitious owners chasing growth. Less compelling to lifestyle-business owners who chose small deliberately.',
+    differentiation: 'Frames productisation as competitive advantage rather than as internal tidiness.',
+    rationale: ['Discovery goals named operational rigour as a signal worth sending'],
+    uniqueClaim: 'productising is how you outgrow rival agencies',
+    primarySegment: 'growth-chasing owners',
+  },
+  {
+    direction: 'TRUST',
+    positioning:
+      'Your delivery record already contains the answer, so nothing here is invented. Every offer is built from work you have shipped and can stand behind.',
+    strengths: ['Removes the leap of faith that made the abandoned first attempt feel risky'],
+    risks: ['Reads as unambitious next to louder tools, which makes it harder to market'],
+    audienceFit:
+      'Best fits cautious owners burned by a previous attempt. Less compelling to early-stage agencies with a thin delivery record to draw on.',
+    differentiation: 'Built only from evidence the agency already has, never from a blank template.',
+    rationale: ['Discovery recorded that the audience abandoned one attempt already'],
+    uniqueClaim: 'every offer is evidenced by work already delivered',
+    primarySegment: 'cautious owners burned before',
+  },
+];
+
+/** Two candidates that collide on every axis, for testing the distinctness check. */
+export const indistinctCandidates: StrategyCandidate[] = [
+  strategyCandidates[0]!,
+  {
+    ...strategyCandidates[1]!,
+    direction: 'OUTCOMES',
+    uniqueClaim: 'we connect owners to operators who have run this playbook',
+    primarySegment: 'owners stalled on delegation',
+    risks: [...strategyCandidates[0]!.risks],
+  },
+];
+
+const strategyOptions: StrategyOption[] = strategyCandidates.map(toStrategyOption);
+
 const selectedStrategy: SelectedStrategy = {
-  name: 'Throughline',
-  tagline: 'The work you already repeat.',
-  namingTerritory: 'Repetition',
-  positioningStatement: 'Throughline turns the work an agency already repeats into an offer someone else can deliver.',
-  rationale: ['Carries the differentiator without explaining it'],
-  rejectedAlternatives: ['Handoff — reads as offboarding'],
+  direction: 'TRUST',
+  chosenAt: '2026-09-27T10:00:00.000Z',
+  reasonChosen: 'The audience has been burned once; reassurance beats ambition here.',
 };
 
 const stressTests: StressTest[] = [
@@ -237,6 +301,7 @@ export const sectionFixtures = {
   positioning,
   shape,
   visualDirection,
+  strategyOptions,
   selectedStrategy,
   stressTests,
   consistency,
@@ -285,7 +350,9 @@ export class StubDeriver implements SectionDeriver {
           ? discoverResult
           : section === 'positioning'
             ? positionResult
-            : sectionFixtures[section];
+            : section === 'strategyOptions'
+              ? { strategies: strategyCandidates }
+              : sectionFixtures[section];
 
     // Parsing through the real schema keeps the fixtures honest: a fixture that
     // drifts out of schema fails the test rather than silently passing.

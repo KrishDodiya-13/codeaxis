@@ -185,9 +185,33 @@ describe('serializeForPrompt', () => {
     assert.deepEqual(Object.keys(parsed).sort(), ['discovery', 'project']);
   });
 
-  it('includes every section of a complete state', () => {
+  it('includes every section of a complete state, with the selection resolved', () => {
     const parsed = JSON.parse(serializeForPrompt(completeState())) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(parsed).sort(), ['project', ...SECTION_ORDER].sort());
+
+    // strategyOptions is replaced by the resolved selection once a direction has
+    // been chosen, so a later step cannot develop one that was not picked.
+    const expected = [...SECTION_ORDER].filter((section) => section !== 'strategyOptions');
+    assert.deepEqual(Object.keys(parsed).sort(), ['project', ...expected].sort());
+  });
+
+  it('sends the candidates while no direction has been chosen', () => {
+    const state = completeState();
+    delete state.selectedStrategy;
+
+    const parsed = JSON.parse(serializeForPrompt(state)) as Record<string, unknown>;
+    assert.ok(Array.isArray(parsed.strategyOptions));
+    assert.equal(parsed.selectedStrategy, undefined);
+  });
+
+  it('resolves the chosen strategy in full and hides the rejected ones', () => {
+    const parsed = JSON.parse(serializeForPrompt(completeState())) as {
+      selectedStrategy: { direction: string; strategy: { direction: string } };
+      strategyOptions?: unknown;
+    };
+
+    assert.equal(parsed.strategyOptions, undefined);
+    assert.equal(parsed.selectedStrategy.direction, 'TRUST');
+    assert.equal(parsed.selectedStrategy.strategy.direction, 'TRUST');
   });
 
   it('is byte-stable across calls', () => {
