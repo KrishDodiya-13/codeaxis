@@ -38,10 +38,63 @@ export const DiscoverySchema = z.object({
   problem: text('The problem the product solves, stated from the user side.'),
   targetAudience: text('Who this is for, specifically enough to exclude someone.'),
   userNeed: text('The underlying need, not the feature that serves it.'),
-  goals: z.array(text()).min(1).describe('What the brand has to achieve to be worth building.'),
-  constraints: z.array(z.string()).describe('Real limits: budget, market, regulation, channel, technical.'),
-  assumptions: z.array(z.string()).describe('What is being taken on faith and would change the work if wrong.'),
-  openQuestions: z.array(z.string()).describe('Unresolved questions worth putting to the user.'),
+  // No minimum on any array here: DISCOVER may legitimately return none of
+  // these when the idea did not imply them, and padding them with filler is
+  // exactly the invention this phase exists to prevent.
+  goals: z.array(text()).describe('What success looks like, where stated or narrowly inferable.'),
+  constraints: z.array(text()).describe('Real limits: budget, market, regulation, channel, technical.'),
+  assumptions: z.array(text()).describe('What was inferred rather than stated, and would change the work if wrong.'),
+  openQuestions: z.array(text()).describe('Questions that were never resolved, carried forward rather than dropped.'),
+});
+
+/**
+ * The DISCOVER endpoint's response.
+ *
+ * This is the wire contract for `POST /api/discover`, and it is deliberately a
+ * different shape from `DiscoverySchema`: `missingInformation` and
+ * `followUpQuestions` are working fields for the discovery conversation itself,
+ * not part of `BrandState`. `toDiscoverySection` maps one to the other.
+ *
+ * `assumptions` is an addition to the seven fields in the base spec. The spec
+ * leaves tracking the inferred-versus-stated distinction to the implementer, and
+ * `BrandState.discovery.assumptions` needs it, so the model is asked for it
+ * directly rather than having it guessed at mapping time. It is additive — the
+ * seven documented fields are unchanged — so a consumer reading only those is
+ * unaffected.
+ */
+export const DiscoverResultSchema = z.object({
+  problem: text(
+    'The core problem being solved, restated clearly and specifically — not a paraphrase of the idea. The situational pain point, not the motivation under it.',
+  ),
+  targetAudience: text(
+    'Who this is for, based only on what is stated or directly implied. Say what is uncertain rather than narrowing it on a guess.',
+  ),
+  userNeed: text(
+    'The underlying need or job to be done behind the idea. Distinct from the problem: the problem is the situational pain, this is why anyone cares. Do not collapse the two.',
+  ),
+  goals: z
+    .array(text())
+    .describe('What success looks like, if stated or inferable. Return an empty array rather than padding it.'),
+  constraints: z
+    .array(text())
+    .describe(
+      'Known limits: platform, budget, timeline, team size, technical, legal. Return an empty array rather than inventing one.',
+    ),
+  assumptions: z
+    .array(text())
+    .describe(
+      'Anything populated above by inference rather than because the user said it. Each entry names the inference, so a reader can see what rests on a guess.',
+    ),
+  missingInformation: z
+    .array(text())
+    .describe(
+      'The specific gaps in your understanding. Bias toward more of these, not fewer: a short list here means you are quietly assuming things. For a one-line idea, five to ten gaps is normal.',
+    ),
+  followUpQuestions: z
+    .array(text())
+    .describe(
+      'One concrete question per gap, roughly, each answerable in a single sentence. Never open-ended prompts like "What is your vision?".',
+    ),
 });
 
 export const PositioningSchema = z.object({
@@ -50,6 +103,94 @@ export const PositioningSchema = z.object({
   differentiator: text('The one thing true of this brand and not of its competitors.'),
   competitiveAngle: text('How the brand attacks the position held by incumbents.'),
   rationale: z.array(text()).min(1).describe('Why this positioning follows from the discovery work.'),
+  /**
+   * The discovery object this positioning was derived from, as a hash.
+   *
+   * Additive, and the one field of `positioning` that is not strategy: it is
+   * what lets a later consistency check tell "generated from the current
+   * discovery" from "stale, because discovery was edited underneath it".
+   * Optional so a hand-written state stays valid.
+   */
+  sourceDiscoveryHash: z
+    .string()
+    .describe('Set by the pipeline, not the model. Leave it out.')
+    .optional(),
+});
+
+const AlternativePositionSchema = z.object({
+  category: text('The category this alternative would have competed in.'),
+  whyNotChosen: text('One line on why this angle was passed over, in terms of the discovery input.'),
+});
+
+/**
+ * The POSITION endpoint's response.
+ *
+ * Wider than `PositioningSchema` in two ways. `audience` and `problem` are echoed
+ * from discovery so a reviewer can audit the positioning object on its own, and
+ * are deliberately *not* persisted into `BrandState` — `discovery` stays the
+ * single source of truth for both. `alternativePositions` and `assumptionsUsed`
+ * are conditional, and documented in `position.ts`.
+ */
+export const PositionResponseSchema = z.object({
+  category: text(
+    'The market category, stated the way a user would categorize it, not as a marketing euphemism. "student team-formation tool", not "collaborative discovery platform".',
+  ),
+  audience: text(
+    'The audience from discovery, sharpened. If you narrow it, that narrowing is a strategic decision and must appear in rationale.',
+  ),
+  problem: text(
+    'The problem from discovery, echoed so this object is self-contained. Do not rewrite it. If positioning reveals the problem needs restating, say so in rationale — that is a signal to loop back to discovery, not to redefine it here.',
+  ),
+  valueProposition: text(
+    'One sentence: what this delivers, and to whom. A plain, testable claim that could be argued true or false — not a tagline or a slogan.',
+  ),
+  differentiator: text(
+    'What makes this meaningfully different from the alternatives, including doing nothing, not just from named competitors.',
+  ),
+  competitiveAngle: text(
+    'The strategic angle relative to how people solve this problem today, including improvised alternatives — spreadsheets, group chats, word of mouth. Never claim there are no competitors.',
+  ),
+  rationale: z
+    .array(text())
+    .min(1)
+    .describe(
+      'Why this positioning follows from the discovery input. Each line must tie to something concrete in discovery — a goal, a constraint, the stated need. Reasoning a reviewer can audit, not marketing copy.',
+    ),
+  // .describe() must come before .optional(): reversed, the description is lost
+  // to the same schema deduplication that the text() factory works around.
+  alternativePositions: z
+    .array(AlternativePositionSchema)
+    .describe('Other viable angles considered and passed over. Only when asked for.')
+    .optional(),
+  assumptionsUsed: z
+    .array(text())
+    .describe(
+      'Only when discovery had unresolved questions and you were told to proceed anyway: one entry per question you had to assume an answer to, naming the assumption.',
+    )
+    .optional(),
+});
+
+/**
+ * What the model is actually asked for: the response plus a self-check.
+ *
+ * The specificity test — "could this category name describe five unrelated
+ * products?" — is a semantic judgement, so the model makes it and the code acts
+ * on the answer. `categoryCheck` is stripped before the response goes out; it is
+ * a working field, like DISCOVER's `missingInformation`.
+ */
+export const PositionResultSchema = PositionResponseSchema.extend({
+  categoryCheck: z
+    .object({
+      unrelatedProducts: z
+        .array(text())
+        .describe(
+          'Real, unrelated products that the category name you wrote could also plausibly describe. If you can name several, the category is too vague. Be honest here rather than defending your wording.',
+        ),
+      couldDescribeUnrelatedProducts: z
+        .boolean()
+        .describe('True if the category name is vague enough to cover unrelated products.'),
+    })
+    .describe('A check on your own category name. Apply it strictly.'),
 });
 
 export const NamingTerritorySchema = z.object({
@@ -234,6 +375,7 @@ export const BrandStateFileSchema = z.object({
     differentiator: looseText,
     competitiveAngle: looseText,
     rationale: looseList,
+    sourceDiscoveryHash: looseText.optional(),
   }),
   shape: z.object({
     personality: looseList,

@@ -9,14 +9,14 @@
 import type { SectionDeriver, Usage } from './client.ts';
 import {
   ConsistencySchema,
-  DiscoverySchema,
   FinalBrandSchema,
-  PositioningSchema,
   SelectedStrategySchema,
   ShapeSchema,
   StressTestsResultSchema,
   VisualDirectionSchema,
 } from './schemas.ts';
+import { discover, toDiscoverySection } from './discover.ts';
+import { position, toPositioningSection } from './position.ts';
 import { applyDelta, isSectionPopulated, serializeForPrompt } from './state.ts';
 import type { BrandState, BrandStateSection, SectionValue } from './types.ts';
 
@@ -57,7 +57,13 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
     label: 'Discovery',
     dependsOn: [],
     async derive(deriver, state) {
-      return deriver.deriveSection('discovery', serializeForPrompt(state), DiscoverySchema);
+      // Runs through DISCOVER rather than asking for the BrandState section
+      // directly, so the pipeline and the /api/discover endpoint share one
+      // implementation and cannot drift apart. The pipeline takes the first pass
+      // only; answering the follow-up questions is a conversation the endpoint
+      // drives, and whatever is left unresolved arrives here as openQuestions.
+      const result = await discover(deriver, { idea: state.project.idea });
+      return { value: toDiscoverySection(result.value), usage: result.usage };
     },
   },
 
@@ -66,7 +72,20 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
     label: 'Positioning',
     dependsOn: ['discovery'],
     async derive(deriver, state) {
-      return deriver.deriveSection('positioning', serializeForPrompt(state), PositioningSchema);
+      // Runs through POSITION, so the pipeline and /api/position share one
+      // prompt and one schema.
+      //
+      // forceProceed is set because an end-to-end run has no one to answer
+      // discovery's open questions — DISCOVER almost always leaves some, and the
+      // guard would otherwise halt every run. The discipline is kept rather than
+      // dropped: each assumed answer comes back named in assumptionsUsed and as a
+      // note in rationale, so a pipeline run says what it assumed instead of
+      // hiding it. Callers who want the guard enforced use the endpoint.
+      const result = await position(deriver, {
+        discovery: state.discovery,
+        forceProceed: true,
+      });
+      return { value: toPositioningSection(result.value, state.discovery), usage: result.usage };
     },
   },
 

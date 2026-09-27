@@ -22,7 +22,10 @@ export {
   BrandStateFileSchema,
   BrandStateSchema,
   ConsistencySchema,
+  DiscoverResultSchema,
   DiscoverySchema,
+  PositionResponseSchema,
+  PositionResultSchema,
   FinalBrandSchema,
   PositioningSchema,
   SelectedStrategySchema,
@@ -56,7 +59,7 @@ export {
   SectionParseError,
   addUsage,
 } from './client.ts';
-export type { BrandClientOptions, Effort, SectionDeriver, Usage } from './client.ts';
+export type { BrandClientOptions, DeriveOptions, Effort, SectionDeriver, Usage } from './client.ts';
 
 export { MissingDependencyError, STEPS, missingDependencies, runStep } from './steps.ts';
 
@@ -74,6 +77,44 @@ export type {
   Snapshot,
   StepRecord,
 } from './pipeline.ts';
+
+export {
+  DiscoverInputError,
+  discover,
+  formatAnswers,
+  isDiscoverySufficient,
+  toDiscoverySection,
+  validateDiscoverRequest,
+} from './discover.ts';
+export type { DiscoverAnswers, DiscoverRequest, DiscoverResult } from './discover.ts';
+
+export {
+  DiscoveryIncompleteError,
+  PositionInputError,
+  VagueCategoryError,
+  detectsAudienceNarrowing,
+  hashDiscovery,
+  isCategoryAllFiller,
+  isDiscoveryReadyToPosition,
+  isPositioningStale,
+  position,
+  toPositionResponse,
+  toPositioningSection,
+  validatePositionRequest,
+} from './position.ts';
+export type {
+  CompetitorLookup,
+  PositionOptions,
+  PositionRequest,
+  PositionResponse,
+  PositionResult,
+} from './position.ts';
+
+export { createWebSearchCompetitorLookup, parseCompetitorList } from './competitors.ts';
+export type { WebSearchLookupOptions } from './competitors.ts';
+
+export { createDiscoverServer, listen } from './server.ts';
+export type { ServerOptions } from './server.ts';
 
 export { InvalidRunFileError, loadState, saveState } from './store.ts';
 export { renderMarkdown } from './report.ts';

@@ -42,12 +42,28 @@ describe('runStep', () => {
     let state = createInitialState(project);
     state = (await runStep(deriver, state, 'discovery')).state;
     state = (await runStep(deriver, state, 'positioning')).state;
+    state = (await runStep(deriver, state, 'shape')).state;
 
-    const positioningCall = deriver.calls[1]!;
-    assert.match(positioningCall.serializedState, /discovery/);
-    assert.match(positioningCall.serializedState, /project/);
+    // shape is a plain section step, so it receives the serialized state.
+    const shapeCall = deriver.calls[2]!;
+    assert.match(shapeCall.serializedState, /discovery/);
+    assert.match(shapeCall.serializedState, /positioning/);
+    assert.match(shapeCall.serializedState, /project/);
     // Sections not yet derived are not sent, so the model cannot fill them in.
-    assert.doesNotMatch(positioningCall.serializedState, /visualDirection/);
+    assert.doesNotMatch(shapeCall.serializedState, /visualDirection/);
+  });
+
+  it('gives discovery and positioning their own purpose-built prompts', async () => {
+    const deriver = new StubDeriver();
+    let state = createInitialState(project);
+    state = (await runStep(deriver, state, 'discovery')).state;
+    await runStep(deriver, state, 'positioning');
+
+    // Both go through their endpoint's flow, which sends a tailored user turn
+    // rather than the generic serialized state.
+    assert.match(deriver.calls[0]!.userPrompt!, /<idea>/);
+    assert.match(deriver.calls[1]!.userPrompt!, /<discovery>/);
+    assert.equal(deriver.calls[1]!.serializedState, '');
   });
 });
 

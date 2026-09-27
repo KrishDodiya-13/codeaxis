@@ -8,11 +8,18 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { z } from 'zod';
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { BrandClient, DEFAULT_MODEL, RefusalError, SectionParseError } from '../src/client.ts';
 import { METHODOLOGY } from '../src/prompts.ts';
-import { DiscoverySchema, sectionSchemas } from '../src/schemas.ts';
+import {
+  DiscoverResultSchema,
+  DiscoverySchema,
+  PositionResultSchema,
+  StressTestsResultSchema,
+  sectionSchemas,
+} from '../src/schemas.ts';
 import { SECTION_ORDER } from '../src/state.ts';
 import { sectionFixtures } from './fixtures.ts';
 
@@ -125,19 +132,35 @@ describe('the request BrandClient builds', () => {
     assert.match(format.schema.properties.userNeed.description, /underlying need/);
   });
 
-  it('describes every field of every section, with no descriptions lost to deduplication', async () => {
-    for (const section of SECTION_ORDER) {
-      const schema = zodOutputFormat(sectionSchemas[section]).schema as Record<string, any>;
-      const root = schema.type === 'object' ? schema : schema.items;
-      const described = Object.values(root.properties as Record<string, any>).filter(
-        (property) => typeof property.description === 'string' && property.description.length > 0,
-      );
+  it('describes every field of every model-facing schema, with none lost to deduplication', () => {
+    // Two steps do not ask for their BrandState section directly: discovery asks
+    // for a DISCOVER result and positioning for a POSITION result, each mapped
+    // afterwards. This checks what is actually sent, which is the only thing the
+    // descriptions matter for.
+    const modelFacing: Record<string, z.ZodType> = {
+      discovery: DiscoverResultSchema,
+      positioning: PositionResultSchema,
+      stressTests: StressTestsResultSchema,
+      shape: sectionSchemas.shape,
+      visualDirection: sectionSchemas.visualDirection,
+      selectedStrategy: sectionSchemas.selectedStrategy,
+      consistency: sectionSchemas.consistency,
+      finalBrand: sectionSchemas.finalBrand,
+    };
 
-      assert.equal(
-        described.length,
-        Object.keys(root.properties).length,
-        `${section}: only ${described.length} of ${Object.keys(root.properties).length} fields carry a description`,
-      );
+    // Every section must be covered, so adding one cannot skip this check.
+    assert.deepEqual(Object.keys(modelFacing).sort(), [...SECTION_ORDER].sort());
+
+    for (const [section, schema] of Object.entries(modelFacing)) {
+      const properties = (zodOutputFormat(schema).schema as Record<string, any>).properties as Record<
+        string,
+        any
+      >;
+      const undescribed = Object.entries(properties)
+        .filter(([, property]) => typeof property.description !== 'string' || property.description === '')
+        .map(([name]) => name);
+
+      assert.deepEqual(undescribed, [], `${section}: fields with no description: ${undescribed.join(', ')}`);
     }
   });
 

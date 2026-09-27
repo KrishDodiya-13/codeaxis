@@ -37,6 +37,13 @@ export type Positioning = {
   differentiator: string;
   competitiveAngle: string;
   rationale: string[];
+  /**
+   * The discovery object this was derived from, as a hash.
+   *
+   * Lets a consistency check tell current positioning from positioning left
+   * stale by an edit to discovery. Optional: a hand-written state has none.
+   */
+  sourceDiscoveryHash?: string;
 };
 
 export type NamingTerritory = {

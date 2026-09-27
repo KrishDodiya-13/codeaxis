@@ -7,7 +7,9 @@ brand. Each step reads the whole state, writes exactly one section, and hands it
 on — so positioning decided in step two still governs the visual direction in
 step four, instead of being re-derived and quietly contradicted.
 
-Built from [docs/brandstate-spec.md](docs/brandstate-spec.md).
+Built from [docs/brandstate-spec.md](docs/brandstate-spec.md) (Phase 1), the Phase 2
+DISCOVER spec ([docs/discover-endpoint.md](docs/discover-endpoint.md)) and the Phase 3
+POSITION spec ([docs/position-endpoint.md](docs/position-endpoint.md)).
 
 ## Install
 
@@ -52,6 +54,85 @@ Every command reads and writes one run file (`runs/brand.json` by default,
 rolled back and resumed across invocations. `node dist/cli.js help` lists the
 full set of options.
 
+## The DISCOVER endpoint
+
+Phase 2 exposes the first pipeline step over HTTP.
+
+```bash
+node dist/cli.js serve --port 3000
+```
+
+```bash
+curl -s localhost:3000/api/discover -H 'content-type: application/json'   -d '{"idea":"an app for students to find hackathon teammates"}'
+```
+
+It returns the discovery object — `problem`, `targetAudience`, `userNeed`,
+`goals`, `constraints`, `assumptions`, `missingInformation`,
+`followUpQuestions` — and nothing wrapped around it. Discovery is sufficient when
+`missingInformation` is empty.
+
+The point of this step is that it does **not** generate a brand. Given a one-line
+idea it extracts what can genuinely be inferred and flags everything else, so
+nothing downstream is built on invented audience details, goals or constraints. An
+empty `constraints` array is correct output when the idea implied none.
+
+Call it again with the prior object and the user's answers to refine it:
+
+```bash
+curl -s localhost:3000/api/discover -H 'content-type: application/json'   -d '{"idea":"...","discovery":{...},"answers":{"Is this for one campus?":"any student"}}'
+```
+
+Resolved gaps and their questions drop out, answers that supersede an inference
+drop the matching assumption, new gaps get added, and unanswered questions are
+kept. Repeat until nothing is missing, or until the user chooses to proceed with
+what they have.
+
+Without the server, `brandstate discover "<idea>"` runs the same step and prints
+the result, with `--prior` and `--answers` for a refinement.
+
+Status codes, the three decisions the spec left open, and the mapping into
+`BrandState.discovery` are documented in
+[docs/discover-endpoint.md](docs/discover-endpoint.md).
+
+## The POSITION endpoint
+
+Phase 3 takes a completed discovery and decides where the brand stands.
+
+```bash
+curl -s localhost:3000/api/position -H 'content-type: application/json'   -d '{"discovery":{...},"knownCompetitors":["Discord servers"]}'
+```
+
+It returns `category`, `audience`, `problem`, `valueProposition`, `differentiator`,
+`competitiveAngle` and `rationale`. The discovery object is accepted bare at the top
+level too, so Phase 2's response can be forwarded unchanged.
+
+Where DISCOVER's failure mode was inventing facts, this one's is inventing a
+*generic* position — one technically true and equally true of every competitor. Two
+mechanisms push back. The model must answer the spec's own test about its category
+("could this name describe five unrelated products?") and a category that fails is
+regenerated with the rejected wording quoted back; and `rationale` must tie each line
+to something concrete in discovery, so the decision can be audited rather than
+trusted.
+
+It also refuses to build on shaky ground. If discovery still has open questions the
+request gets a `422` listing them and **the model is never called**:
+
+```bash
+curl -s localhost:3000/api/position -H 'content-type: application/json' -d '{"discovery":{...}}'
+# 422 {"error":"Discovery is not finished: 1 question still unresolved...",
+#      "openQuestions":["Is the buyer the owner or an operations lead?"]}
+```
+
+Pass `forceProceed: true` to proceed anyway — each assumed answer then comes back in
+`assumptionsUsed` with a matching note in `rationale`. Proceeding is allowed;
+proceeding silently is not.
+
+`brandstate position <discovery.json>` runs the same step from the command line, with
+`--competitors`, `--force` and `--alternatives`.
+
+Status codes, the provenance hash, the optional competitor lookup, and the decisions
+the spec left open are in [docs/position-endpoint.md](docs/position-endpoint.md).
+
 ## Use it as a library
 
 ```ts
@@ -70,6 +151,7 @@ Finer-grained control, when you want to drive the steps yourself:
 
 ```ts
 import { BrandClient, createInitialState, runStep, rollbackTo, validateState } from './dist/index.js';
+import { discover, isDiscoverySufficient, toDiscoverySection } from './dist/index.js';
 
 const client = new BrandClient({ effort: 'medium' });
 let state = createInitialState({ idea: '...' });
@@ -83,8 +165,23 @@ state = rollbackTo(state, 'positioning');
 validateState(state); // { valid: true } or the offending section and field
 ```
 
-`runPipeline` takes any object with a `deriveSection` method, so tests and
-alternative backends substitute for `BrandClient` without touching the steps.
+DISCOVER on its own, driving the question loop yourself:
+
+```ts
+const client = new BrandClient();
+let result = (await discover(client, { idea: 'an app for students' })).value;
+
+while (!isDiscoverySufficient(result)) {
+  const answers = await askTheUser(result.followUpQuestions); // your UI
+  result = (await discover(client, { idea, priorDiscovery: result, answers })).value;
+}
+
+const section = toDiscoverySection(result); // ready for BrandState.discovery
+```
+
+`runPipeline`, `discover` and `createDiscoverServer` all take any object with a
+`deriveSection` method, so tests and alternative backends substitute for
+`BrandClient` without touching the steps.
 
 ## How the state is threaded
 
@@ -96,6 +193,19 @@ project → discovery → positioning → shape → visualDirection
 ```
 
 Four rules make the threading trustworthy:
+
+**The endpoint steps are shared, not duplicated.** `runStep(…, 'discovery')` and
+`runStep(…, 'positioning')` go through DISCOVER and POSITION and map the results,
+rather than asking for the `BrandState` sections directly — so the pipeline and the
+endpoints share one prompt and one schema each and cannot drift apart. A pipeline run
+takes the first pass only: it cannot answer discovery's questions, so it proceeds past
+them and records what it assumed, and anything unresolved arrives in the state as
+`openQuestions`.
+
+**Positioning records what it was derived from.** `positioning.sourceDiscoveryHash`
+fingerprints the discovery used, so `isPositioningStale()` can tell current
+positioning from positioning left behind by a later edit to discovery. This is what
+the eventual `consistency` check needs to avoid trusting a stale section.
 
 **One section per step.** `applyDelta` is the only way a section changes, and it
 writes exactly one. A step cannot reach sideways into another section, so a later
@@ -170,8 +280,8 @@ departing from it; the field names and section structure are unchanged.
 ## Tests
 
 ```bash
-npm test        # 78 tests, no API key and no network
-npm run typecheck
+npm test        # 210 tests, no API key and no network
+npm run typecheck   # covers src and test
 ```
 
 The suite covers the state operations (merge isolation, population detection,
@@ -179,12 +289,26 @@ diffing, rollback, deterministic serialization), the pipeline (ordering,
 dependency enforcement, resume, snapshots, error handling), persistence, the
 Markdown report, and the schemas.
 
+`test/discover.test.ts` covers DISCOVER: the spec's own worked example is checked
+against the schema verbatim, along with request validation for all three answer
+shapes, the refinement prompt, the mapping into `BrandState.discovery` under
+mismatched gap/question lists, and that sparse output is accepted.
+`test/position.test.ts` covers POSITION: the guard (including that it never calls the
+model), the category regenerate loop and its failure mode, the filler backstop in both
+directions, the mapping and what it deliberately drops, the provenance hash, and the
+optional lookup — including that a lookup which throws cannot fail the step.
+`test/server.test.ts` starts a real server on an ephemeral port and drives it over
+HTTP, covering routing, every status code, and that a 500 does not leak
+internals.
+
 `test/client.test.ts` runs `BrandClient` against a fake transport, so the request
 body is checked without credentials: the model and thinking configuration, the
 cache breakpoint sitting ahead of the volatile content, the generated JSON
 schema, and the handling of refusals, truncation and unparseable responses.
 
-**Not verified:** no live API call has been made against this code — there were
-no credentials available in the environment it was built in. The request shape is
-checked against the SDK's own types and asserted at the transport boundary, but
-the first real run is still the first real run.
+**Not verified:** no live API call has been made against this code — there were no
+credentials available in the environment it was built in. Request shapes are checked
+against the SDK's own types and asserted at the transport boundary, but the first real
+run is still the first real run. Two things in particular are unproven against a real
+model: whether the prompts actually produce the behaviour they ask for, and the
+`web_search` competitor lookup, whose parsing is tested but whose live call is not.
