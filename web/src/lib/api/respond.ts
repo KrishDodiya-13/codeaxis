@@ -257,6 +257,17 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
       console.error('[brandos] upstream unavailable', error.message);
       return fail(503, 'upstream_unavailable', error.message, { retryable: false });
     }
+    if (error instanceof Prisma.PrismaClientInitializationError) {
+      // DATABASE_URL missing or the database unreachable. Named here so the response
+      // says what is wrong instead of a generic 500; the detail stays in the log.
+      console.error('[brandos] database unavailable', error.message);
+      return fail(
+        503,
+        'upstream_unavailable',
+        'The database is not configured or not reachable. Check DATABASE_URL.',
+        { retryable: true },
+      );
+    }
     if (error instanceof CorruptBrandStateError) {
       console.error('[brandos] corrupt brand state', error);
       return fail(500, 'internal_error', error.message);
