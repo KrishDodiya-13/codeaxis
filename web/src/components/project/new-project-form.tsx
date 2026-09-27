@@ -12,7 +12,7 @@ import { useSpeechToText } from '@/hooks/use-speech-to-text'
 const SOFT_LIMIT = 500
 
 // The hero's springy ease, for the stamp.
-const SPRING = 'ease-[cubic-bezier(.3,1.6,.5,1)]'
+const SPRING = '[transition-timing-function:cubic-bezier(.3,1.6,.5,1)]'
 
 const EXAMPLES = [
   {
@@ -88,7 +88,7 @@ export default function NewProjectForm() {
         aria-hidden="true"
         className={cn(
           'absolute right-2 top-4 hidden cursor-default rounded-[50%] border-2 border-poster-ink px-5 py-2.5 text-sm font-extrabold md:block',
-          'rotate-[-9deg] transition-[transform,background-color] duration-[400ms] hover:rotate-[6deg] hover:scale-[1.08] hover:bg-poster-green',
+          'rotate-[-9deg] transition-[transform,background-color] [transition-duration:400ms] hover:rotate-[6deg] hover:scale-[1.08] hover:bg-poster-green',
           SPRING,
           'motion-reduce:transition-none'
         )}

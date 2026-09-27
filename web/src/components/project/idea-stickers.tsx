@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
  * Positions are relative to the form (which is `relative`), so they track it.
  */
 
-const SPRING = 'ease-[cubic-bezier(.3,1.6,.5,1)]'
+const SPRING = '[transition-timing-function:cubic-bezier(.3,1.6,.5,1)]'
 
 /** A 14-point starburst centred in a 120x120 box. */
 function starburstPath() {
@@ -111,7 +111,7 @@ export default function IdeaStickers() {
           viewBox="0 0 120 120"
           className={cn(
             'h-full w-full overflow-visible transition-transform duration-500 hover:rotate-[40deg] hover:scale-[1.18]',
-            'ease-[cubic-bezier(.3,1.8,.5,1)] motion-reduce:transition-none'
+            '[transition-timing-function:cubic-bezier(.3,1.8,.5,1)] motion-reduce:transition-none'
           )}
         >
           <path d={FLOWER} className="fill-white stroke-poster-ink [stroke-linejoin:round] [stroke-width:2.6]" />

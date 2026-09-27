@@ -17,7 +17,7 @@ export default function HoverLetters({ text, className }: { text: string; classN
                 <span
                   key={i}
                   className={cn(
-                    'inline-block transition-[transform,color] duration-300 ease-[cubic-bezier(.3,1.6,.5,1)]',
+                    'inline-block transition-[transform,color] duration-300 [transition-timing-function:cubic-bezier(.3,1.6,.5,1)]',
                     'hover:-translate-y-[0.08em] hover:-rotate-[4deg] hover:text-poster-green',
                     'motion-reduce:transition-none motion-reduce:hover:transform-none'
                   )}
