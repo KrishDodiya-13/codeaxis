@@ -55,14 +55,17 @@ export default function UnderstandingPanel({
   idea,
   discovery,
   gathering,
+  busy = false,
 }: {
   idea: string
   discovery: DiscoverResult | null
   gathering: boolean
+  /** The engine is working: this panel will be updated when it answers. */
+  busy?: boolean
 }) {
   const d = discovery
   return (
-    <Panel index="02" label="Current understanding" title="Discovery state" delay={90}>
+    <Panel index="02" label="Current understanding" title="Discovery state" delay={90} busy={busy}>
       <div className="space-y-5">
         {/* The idea as a pinned note: tilts a touch and lifts on hover, like the /new stickers. */}
         <div

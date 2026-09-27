@@ -9,6 +9,7 @@ import {
   ModelRequestError,
   ModelTimeoutError,
   PositionInputError,
+  QuotaExceededError,
   RefusalError,
   SchemaValidationError,
   SectionParseError,
@@ -34,7 +35,30 @@ export function errorResponse(status: number, message: string, detail?: unknown)
   return NextResponse.json({ error: `${message} — ${summary}`, detail }, { status })
 }
 
+/** Groq's "1h5m45.024s" as "1h 5m"; seconds only when that's all there is. */
+function readableWait(wait: string | undefined): string | undefined {
+  // The engine's capture can carry the sentence's full stop: "40m34.31s."
+  wait = wait?.replace(/\.+$/, '')
+  if (!wait) return undefined
+  return wait
+    .replace(/\.\d+s$/, 's')
+    .replace(/(\d+)h/, '$1h ')
+    .replace(/(\d+)m/, '$1m ')
+    .replace(/\s*\d+s$/, (s) => (/[hm]/.test(wait) ? '' : s))
+    .trim()
+}
+
+function quotaMessage(wait: string | undefined): string {
+  const readable = readableWait(wait)
+  return `Today's Groq token quota is used up${readable ? `; it resets in about ${readable}` : ''}. Try again then, or upgrade the Groq tier.`
+}
+
 export function modelErrorResponse(e: unknown, stageLabel: string) {
+  // The engine's own verdict that the allowance is spent. Waiting a minute won't help,
+  // so this says when it resets instead of suggesting a retry.
+  if (e instanceof QuotaExceededError) {
+    return errorResponse(429, quotaMessage(e.retryAfter), e.message)
+  }
   // The caller's fault, or the stage is too early: retrying the same request won't help.
   if (e instanceof MissingDependencyError || e instanceof StrategySelectionRequiredError) {
     return errorResponse(400, e.message)
@@ -94,17 +118,7 @@ export function modelErrorResponse(e: unknown, stageLabel: string) {
   // says exactly when it resets ("try again in 1h5m45.024s"), so say that instead.
   if (e instanceof ModelRequestError && e.status === 429 && /tokens per day|\(TPD\)/.test(e.message)) {
     const wait = e.message.match(/try again in ((?:\d+h)?(?:\d+m)?(?:[\d.]+s)?)/)?.[1]
-    const readable = wait
-      ?.replace(/\.\d+s$/, 's')
-      .replace(/(\d+)h/, '$1h ')
-      .replace(/(\d+)m/, '$1m ')
-      .replace(/\s*\d+s$/, (s) => (/[hm]/.test(wait) ? '' : s))
-      .trim()
-    return errorResponse(
-      429,
-      `Today's Groq token quota is used up${readable ? `; it resets in about ${readable}` : ''}. Try again then, or upgrade the Groq tier.`,
-      e.message,
-    )
+    return errorResponse(429, quotaMessage(wait), e.message)
   }
   if (e instanceof ModelRequestError && e.status === 429) {
     return errorResponse(429, 'Groq rate limit or quota reached. Wait, or set GROQ_MODEL to another model.', e.message)

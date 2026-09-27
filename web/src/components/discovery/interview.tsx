@@ -216,7 +216,7 @@ export default function Interview({
   )
 
   return (
-    <Panel index="01" label="Conversation" footer={composer} className="lg:min-h-0">
+    <Panel index="01" label="Conversation" footer={composer} className="lg:min-h-0" busy={!!thinking}>
       <ol className="space-y-4" aria-live="polite">
         {messages.map((m) => (
           <li key={m.id}>

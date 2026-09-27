@@ -358,7 +358,8 @@ export function DecisionField({
       className={cn(
         'relative rounded-2xl border-2 px-4 py-4 transition-[border-color,background-color,box-shadow,transform] duration-300',
         // Editing lifts the card onto the hard green shadow, like the idea box on /new.
-        'focus-within:-translate-x-1 focus-within:-translate-y-1 focus-within:shadow-[8px_8px_0_#5fb57a] motion-reduce:focus-within:translate-x-0 motion-reduce:focus-within:translate-y-0',
+        // Only while typing in the editor, not when any button inside takes focus.
+        'has-[textarea:focus]:-translate-x-1 has-[textarea:focus]:-translate-y-1 has-[textarea:focus]:shadow-[8px_8px_0_#5fb57a] motion-reduce:has-[textarea:focus]:translate-x-0 motion-reduce:has-[textarea:focus]:translate-y-0',
         settled
           ? 'border-poster-ink bg-poster-green/10'
           : status === 'rejected'

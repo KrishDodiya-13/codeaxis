@@ -58,15 +58,18 @@ const itemIn = 'animate-in fade-in-0 slide-in-from-right-2 fill-mode-backwards d
 export default function ContextPanel({
   discovery,
   canConfirm,
+  busy = false,
   onConfirm,
 }: {
   discovery: DiscoverResult | null
   canConfirm: boolean
+  /** The engine is working: this panel will be updated when it answers. */
+  busy?: boolean
   onConfirm: (assumption: string) => void
 }) {
   if (!discovery) {
     return (
-      <Panel index="03" label="Known / Unknown / Assumed" delay={180}>
+      <Panel index="03" label="Known / Unknown / Assumed" delay={180} busy={busy}>
         <div className="grid place-items-center rounded-3xl border-2 border-dashed border-poster-ink/20 px-4 py-10 text-center">
           <span aria-hidden="true" className="inline-flex gap-1.5">
             {['bg-poster-green', 'bg-white', 'bg-[#f2c94c]'].map((bg, i) => (
@@ -88,7 +91,7 @@ export default function ContextPanel({
   const known = knownFacts(discovery)
 
   return (
-    <Panel index="03" label="Known / Unknown / Assumed" delay={180}>
+    <Panel index="03" label="Known / Unknown / Assumed" delay={180} busy={busy}>
       <div className="space-y-5">
         <Group marker="●" markerClass="bg-poster-green" title="Known" count={known.length}>
           <ul className="space-y-2 text-sm">
@@ -113,7 +116,14 @@ export default function ContextPanel({
                 <li
                   key={gap}
                   style={stagger(i)}
-                  className={cn('flex gap-2 rounded-lg border-2 border-dashed border-poster-ink/20 px-3 py-2 transition-colors duration-200 hover:border-poster-ink/50', itemIn)}
+                  className={cn(
+                    'flex gap-2 rounded-lg border-2 border-dashed border-poster-ink/20 bg-white px-3 py-2',
+                    // Same hover as the "Your idea" note: tilts a touch and lifts onto a hard ink shadow.
+                    'transition-[transform,box-shadow,border-color] duration-300 hover:-rotate-[0.6deg] hover:border-poster-ink hover:shadow-[4px_4px_0_0_#111]',
+                    'motion-reduce:transition-none motion-reduce:hover:rotate-0',
+                    SPRING,
+                    itemIn,
+                  )}
                 >
                   <span aria-hidden="true" className="text-poster-ink/40">○</span>
                   {gap}

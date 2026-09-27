@@ -66,3 +66,49 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * Engine-working ring: a green-and-ink streak chasing around a panel's border while a
+ * model call runs. The angle is a registered custom property so the conic gradient can
+ * rotate smoothly; the mask cuts the gradient down to a ring the width of the padding.
+ */
+@property --engine-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes engine-spin {
+  to {
+    --engine-angle: 360deg;
+  }
+}
+
+.engine-ring {
+  position: absolute;
+  inset: -5px;
+  border-radius: 29px;
+  padding: 4px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--engine-angle),
+    transparent 0deg,
+    transparent 150deg,
+    #5fb57a 250deg,
+    #111111 320deg,
+    #5fb57a 345deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: engine-spin 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No chase: a steady green ring still says "working". */
+  .engine-ring {
+    animation: none;
+    background: #5fb57a;
+  }
+}

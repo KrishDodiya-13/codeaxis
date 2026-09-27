@@ -307,8 +307,8 @@ export default function DiscoveryWorkspace({ id }: { id: string }) {
           onSkip={onSkip}
           onUpdateNow={onUpdateNow}
         />
-        <UnderstandingPanel idea={project.idea} discovery={d} gathering={thinking === 'idea'} />
-        <ContextPanel discovery={d} canConfirm={!thinking} onConfirm={onConfirm} />
+        <UnderstandingPanel idea={project.idea} discovery={d} gathering={thinking === 'idea'} busy={!!thinking} />
+        <ContextPanel discovery={d} canConfirm={!thinking} onConfirm={onConfirm} busy={!!thinking} />
       </div>
 
       <footer className="relative z-10 flex flex-wrap items-center gap-4 border-t-2 border-poster-ink bg-poster-paper px-6 py-4">

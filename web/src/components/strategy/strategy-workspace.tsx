@@ -574,7 +574,7 @@ export default function StrategyWorkspace({ id }: { id: string }) {
 
       <div className="relative z-10 grid flex-1 gap-5 p-5 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.42fr)]">
         <div role="tabpanel" id="strategy-tabpanel" aria-labelledby={`tab-${tab}`} className="flex min-h-0 flex-col">
-          <Panel index={String(activeIndex + 1).padStart(2, '0')} label={TABS[activeIndex].label} className="flex-1">
+          <Panel index={String(activeIndex + 1).padStart(2, '0')} label={TABS[activeIndex].label} className="flex-1" busy={busy}>
             {run && (
               <div className="mb-5">
                 <ProgressSteps
