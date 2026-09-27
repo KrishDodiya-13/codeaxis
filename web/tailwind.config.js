@@ -10,6 +10,12 @@ module.exports = {
     },
     extend: {
       colors: {
+        // Landing poster palette; matches MascotPortfolioHero's paper / ink / accent defaults.
+        poster: {
+          paper: '#ebebea',
+          ink: '#111111',
+          green: '#5fb57a',
+        },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
@@ -43,6 +49,10 @@ module.exports = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+      },
+      fontFamily: {
+        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+        display: ['var(--font-archivo-black)', 'Arial Black', 'sans-serif'],
       },
       borderRadius: {
         lg: 'var(--radius)',

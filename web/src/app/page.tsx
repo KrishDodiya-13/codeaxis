@@ -1,7 +1,39 @@
+import MascotPortfolioHero from '@/components/ui/mascot-portfolio-hero'
+import SiteHeader, { SITE_HEADER_HEIGHT } from '@/components/landing/site-header'
+
 export default function Home() {
   return (
-    <main className="flex min-h-[100svh] items-center justify-center">
-      <h1 className="text-4xl font-semibold tracking-tight">BRANDOS</h1>
+    <main>
+      <SiteHeader />
+      <MascotPortfolioHero
+        height={`calc(100svh - ${SITE_HEADER_HEIGHT})`}
+        /* top rule */
+        index="BRANDOS"
+        discipline="AI brand engine"
+        tagline="Branding as a decision system"
+        collection={['Idea', 'Brand OS']}
+        reel={['Stress-tested strategy', 'Launch-ready brand']}
+        /* headline: IDEA ↘ OS / BUILD / CHALLENGE / LAUNCH [Brand OS] (IT)* */
+        year="Idea"
+        initials="OS"
+        badge="Try to break it"
+        line2="Build"
+        line3="Challenge"
+        word="Launch"
+        verticalTag="Brand OS"
+        bracketed="It"
+        /* call to action */
+        seekingLabel="Got a rough idea?"
+        seeking="Start building"
+        href="/new"
+        services={['Discovery', 'Positioning', 'Brand Battle', 'Stress Test', 'Consistency']}
+        greetings={[
+          'Hi! Got a rough idea?',
+          "I'll ask a few sharp questions first.",
+          'Then we try to break your brand.',
+          'Okay, you can stop poking me :)',
+        ]}
+      />
     </main>
   )
 }
