@@ -467,7 +467,7 @@ departing from it; the field names and section structure are unchanged.
 ## Tests
 
 ```bash
-npm test        # 482 tests, no API key and no network
+npm test        # 748 tests, no API key and no network
 npm run typecheck   # covers src and test
 ```
 
