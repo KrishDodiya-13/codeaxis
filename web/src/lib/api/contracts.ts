@@ -14,6 +14,10 @@ import { z } from 'zod';
 import type {
   BrandDna,
   BrandState,
+  Consistency,
+  ConsistencyDimension,
+  ConsistencyFinding,
+  DimensionEvaluation,
   Direction,
   Discovery,
   DiscoverResult,
@@ -301,6 +305,71 @@ export type ApiErrorBody = {
   retryable?: boolean;
 };
 
+/* ------------------------------------------------------------------ *
+ * POST /api/projects/:id/consistency
+ * ------------------------------------------------------------------ */
+
+/** The eight parts the check compares. Mirrors the engine's CONSISTENCY_DIMENSIONS. */
+export const CONSISTENCY_DIMENSION_NAMES = [
+  'audience',
+  'positioning',
+  'personality',
+  'voice',
+  'visualDirection',
+  'messaging',
+  'valueProposition',
+  'differentiator',
+] as const;
+
+/** The kinds of disagreement. Mirrors the engine's CONSISTENCY_CATEGORIES. */
+export const CONSISTENCY_CATEGORY_NAMES = [
+  'contradiction',
+  'weakAlignment',
+  'unclearPositioning',
+  'toneMismatch',
+  'visualStrategicConflict',
+  'messagingInconsistency',
+] as const;
+
+export const RunConsistencyBody = z
+  .object({
+    /**
+     * Restrict to specific parts, for a cheap re-check after one edit.
+     *
+     * A scoped run replaces only the findings that involve those parts, so a decision
+     * already recorded against another part survives a narrow re-check.
+     */
+    scope: z.array(z.enum(CONSISTENCY_DIMENSION_NAMES)).min(1).optional(),
+  })
+  .strict();
+
+export type RunConsistencyRequest = z.infer<typeof RunConsistencyBody>;
+
+/** One line per part, so "checked and agreed" is stated rather than implied. */
+export type ConsistencyDimensionReport = {
+  dimension: ConsistencyDimension;
+  status: DimensionEvaluation['status'];
+  findingCount: number;
+  message: string;
+};
+
+export type RunConsistencyResponse = {
+  /** The stored section: status, findings, and what was actually compared. */
+  consistency: Consistency;
+  /** Counts by severity, plus `clean` — nothing found AND something actually checked. */
+  summary: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    clean: boolean;
+  };
+  /** Every conflict, each with all six fields. Empty is a good result. */
+  findings: ConsistencyFinding[];
+  reports: ConsistencyDimensionReport[];
+  project: ProjectSummary;
+};
+
 export const API_ERROR_CODES = [
   'invalid_request',
   'not_found',
@@ -310,6 +379,7 @@ export const API_ERROR_CODES = [
   'battle_not_run',
   'stress_test_not_ready',
   'findings_unauditable',
+  'consistency_findings_uncheckable',
   'strategy_not_selected',
   'visual_would_be_orphaned',
   'selection_would_be_orphaned',

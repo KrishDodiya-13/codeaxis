@@ -6,9 +6,9 @@
  * section, its schema, and what it depends on — so the steps are a table rather
  * than eight copies of one function.
  */
+import { checkConsistency } from './consistency.ts';
 import type { SectionDeriver, Usage } from './client.ts';
 import {
-  ConsistencySchema,
   FinalBrandDraftSchema,
   NamingSchema,
   PersonalitySchema,
@@ -219,22 +219,11 @@ export const STEPS: { [S in BrandStateSection]: StepDefinition<S> } = {
     label: 'Consistency check',
     dependsOn: ['discovery', 'positioning', 'selectedStrategy', 'personality', 'naming', 'visualDirection', 'voice'],
     async derive(deriver, state) {
-      const result = await deriver.deriveSection(
-        'consistency',
-        serializeForPrompt(state),
-        ConsistencySchema,
-      );
-
-      // The timestamp and the version are the pipeline's to stamp, not the model's:
-      // they record when the check ran and what it ran against.
-      return {
-        value: {
-          ...result.value,
-          lastCheckedAt: new Date().toISOString(),
-          checkedAgainstVersion: state.schemaVersion,
-        },
-        usage: result.usage,
-      };
+      // Delegates to the consistency engine rather than calling the model directly, so
+      // the pipeline and the API route share one implementation — including the
+      // evidence-grounding check and the status being derived from the findings.
+      const result = await checkConsistency(deriver, { brandState: state });
+      return { value: result.value.consistency, usage: result.usage };
     },
   },
 

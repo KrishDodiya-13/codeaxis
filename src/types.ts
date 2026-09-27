@@ -313,6 +313,68 @@ export type TypeEvaluation = {
 };
 
 /**
+ * The eight parts of the brand the consistency check compares against each other.
+ *
+ * Deliberately not the same list as `BrandStateSection`: `messaging`,
+ * `valueProposition` and `differentiator` live inside other sections but are what a
+ * conflict is actually *about*, so a finding names them directly rather than pointing
+ * at the section that happens to hold them.
+ */
+export const CONSISTENCY_DIMENSIONS = [
+  'audience',
+  'positioning',
+  'personality',
+  'voice',
+  'visualDirection',
+  'messaging',
+  'valueProposition',
+  'differentiator',
+] as const;
+
+export type ConsistencyDimension = (typeof CONSISTENCY_DIMENSIONS)[number];
+
+/** The kinds of disagreement the check looks for. */
+export const CONSISTENCY_CATEGORIES = [
+  'contradiction',
+  'weakAlignment',
+  'unclearPositioning',
+  'toneMismatch',
+  'visualStrategicConflict',
+  'messagingInconsistency',
+] as const;
+
+export type ConsistencyCategory = (typeof CONSISTENCY_CATEGORIES)[number];
+
+/**
+ * One disagreement between two or more parts of the brand.
+ *
+ * `recommendedCorrection` is a proposal, never an instruction the pipeline carries out:
+ * `status` is how a human accepts or rejects it, and nothing here is applied to another
+ * section automatically. A consistency check that silently rewrote an approved decision
+ * would be doing the user's job for them.
+ */
+export type ConsistencyFinding = {
+  category: ConsistencyCategory;
+  severity: Severity;
+  /** The parts that disagree. At least two — a conflict needs two sides. */
+  conflictingElements: ConsistencyDimension[];
+  /** Quoted from the state, citing the field paths involved. */
+  evidence: string;
+  explanation: string;
+  recommendedCorrection: string;
+  /** Set by a human after the fact. Absent means open. */
+  status?: FindingStatus;
+};
+
+/** Whether one dimension could actually be compared. */
+export type DimensionEvaluation = {
+  dimension: ConsistencyDimension;
+  status: EvaluationStatus;
+  /** Why, when the status is not a plain `evaluated`. */
+  note?: string;
+};
+
+/**
  * Whether the sections agree with each other.
  *
  * `not-yet-checked` is the initial state and is distinct from `consistent` — an
@@ -321,9 +383,14 @@ export type TypeEvaluation = {
  */
 export type Consistency = {
   status: 'not-yet-checked' | 'consistent' | 'issues-found';
+  /** Every conflict found. Empty with a `consistent` status is the clean result. */
+  findings: ConsistencyFinding[];
+  /** One entry per dimension, so "checked and clean" is distinct from "not checked". */
+  dimensionsChecked: DimensionEvaluation[];
   lastCheckedAt?: string;
   /** The `schemaVersion` the check ran against. */
   checkedAgainstVersion?: string;
+  /** Free observations, including what holds together and must not be broken. */
   notes?: string[];
 };
 

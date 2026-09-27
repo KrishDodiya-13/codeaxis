@@ -23,7 +23,30 @@ export type MigrationResult = {
   notes: string[];
 };
 
-/** Whether a value looks like a state from before this contract. */
+/** `'1.2.0'` -> `[1, 2, 0]`, with anything unparseable reading as oldest. */
+function versionParts(value: unknown): [number, number, number] {
+  if (typeof value !== 'string') return [0, 0, 0];
+  const parts = value.split('.').map((part) => Number.parseInt(part, 10));
+  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
+}
+
+/** True when `stored` is older than the version this code writes. */
+function isOlderThanCurrent(stored: unknown): boolean {
+  const [a, b, c] = versionParts(stored);
+  const [x, y, z] = versionParts(SCHEMA_VERSION);
+  if (a !== x) return a < x;
+  if (b !== y) return b < y;
+  return c < z;
+}
+
+/**
+ * Whether a value looks like a state from before this contract.
+ *
+ * The version comparison matters as much as the structural markers: 1.3.0 added required
+ * fields to `consistency` without changing anything a marker would catch, so a 1.2.0
+ * state looks structurally current while failing validation. Comparing versions covers
+ * that, and every later bump, rather than needing a new marker each time.
+ */
 export function needsMigration(value: unknown): boolean {
   if (value === null || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;
@@ -31,6 +54,7 @@ export function needsMigration(value: unknown): boolean {
   return (
     'shape' in record ||
     record.schemaVersion === undefined ||
+    isOlderThanCurrent(record.schemaVersion) ||
     (typeof record.consistency === 'object' &&
       record.consistency !== null &&
       'coherent' in (record.consistency as Record<string, unknown>))
@@ -206,14 +230,30 @@ function migratePositioning(value: unknown, notes: string[]): unknown {
  */
 function migrateConsistency(value: unknown, notes: string[]): Consistency {
   if (value === null || value === undefined || typeof value !== 'object') {
-    return { status: 'not-yet-checked' };
+    return blankConsistency();
   }
 
   const old = value as Record<string, any>;
 
-  // Already on the new shape.
-  if (typeof old.status === 'string') return old as Consistency;
-  if (!('coherent' in old)) return { status: 'not-yet-checked' };
+  // Already on a status-based shape. 1.3.0 added structured findings, so a state
+  // written before that has a status but no findings array: it was checked, and the
+  // conflicts it found survive only as prose in notes. Backfilling empty arrays keeps
+  // the status honest rather than inventing findings it never recorded.
+  if (typeof old.status === 'string') {
+    const upgraded: Consistency = {
+      ...(old as Consistency),
+      findings: Array.isArray(old.findings) ? old.findings : [],
+      dimensionsChecked: Array.isArray(old.dimensionsChecked) ? old.dimensionsChecked : [],
+    };
+    if (!Array.isArray(old.findings)) {
+      notes.push(
+        'consistency gained structured findings; the previous result kept its status and notes, ' +
+          'so re-run the check to get findings',
+      );
+    }
+    return upgraded;
+  }
+  if (!('coherent' in old)) return blankConsistency();
 
   const issues = Array.isArray(old.issues) ? old.issues : [];
   const strengths = Array.isArray(old.strengths) ? old.strengths : [];
@@ -222,7 +262,7 @@ function migrateConsistency(value: unknown, notes: string[]): Consistency {
   // which is not the same as having been checked and found inconsistent.
   if (issues.length === 0 && strengths.length === 0 && old.coherent !== true) {
     notes.push('consistency had no recorded result, so it reads as not-yet-checked');
-    return { status: 'not-yet-checked' };
+    return blankConsistency();
   }
 
   const carried = [
@@ -243,8 +283,17 @@ function migrateConsistency(value: unknown, notes: string[]): Consistency {
 
   return {
     status: issues.length > 0 ? 'issues-found' : 'consistent',
+    // The old issues carried no category or dimensions, so they cannot be rebuilt as
+    // structured findings without inventing fields. They stay in notes.
+    findings: [],
+    dimensionsChecked: [],
     ...(carried.length > 0 ? { notes: carried } : {}),
   };
+}
+
+/** An unchecked consistency section. */
+function blankConsistency(): Consistency {
+  return { status: 'not-yet-checked', findings: [], dimensionsChecked: [] };
 }
 
 function stringList(value: unknown): string[] {

@@ -10,7 +10,12 @@
  */
 import { z } from 'zod';
 import { DIRECTIONS } from './archetypes.ts';
-import { DECISION_NAMES, TEST_TYPES } from './types.ts';
+import {
+  CONSISTENCY_CATEGORIES,
+  CONSISTENCY_DIMENSIONS,
+  DECISION_NAMES,
+  TEST_TYPES,
+} from './types.ts';
 
 /**
  * The contract version.
@@ -19,7 +24,7 @@ import { DECISION_NAMES, TEST_TYPES } from './types.ts';
  * stored object built against an older version needs `migrateState` before it can be
  * read. See the changelog in docs/brand-dna-contract.md.
  */
-export const SCHEMA_VERSION = '1.2.0';
+export const SCHEMA_VERSION = '1.3.0';
 import type { BrandState, BrandStateSection } from './types.ts';
 
 /**
@@ -556,18 +561,76 @@ export const StressTestResultSchema = strictObject({
     .describe('One entry per test type you were asked to run, saying whether you could run it.'),
 });
 
+/**
+ * One conflict between parts of the brand.
+ *
+ * `conflictingElements` needs at least two entries: a conflict has two sides, and a
+ * finding that names only one is describing a weak decision rather than a disagreement,
+ * which is a different job.
+ */
+export const ConsistencyFindingSchema = strictObject({
+  category: z
+    .enum(CONSISTENCY_CATEGORIES)
+    .describe(
+      'contradiction = two parts cannot both be true. weakAlignment = they do not conflict but do not reinforce each other either. unclearPositioning = the position is too vague to check against. toneMismatch = voice or personality pull in different directions. visualStrategicConflict = the visual system says something the strategy does not. messagingInconsistency = the messages disagree with each other or with the value proposition.',
+    ),
+  severity: z
+    .enum(['low', 'medium', 'high', 'critical'])
+    .describe(
+      'critical = the brand contradicts itself so plainly it cannot ship. high = a real conflict a reader would notice, fix before finalizing. medium = a genuine misalignment, not blocking alone. low = minor tightening. Rate against these, not by how important you want the finding to sound.',
+    ),
+  conflictingElements: z
+    .array(z.enum(CONSISTENCY_DIMENSIONS))
+    .min(2)
+    .describe(
+      'The parts that disagree, at least two. Name the parts actually in tension, not every part the subject touches.',
+    ),
+  evidence: text(
+    'Quote the state and cite the field paths, e.g. `personality.traits` vs `voice.tone`. Evidence that cites no field path cannot be checked and will be rejected. Never cite market data, competitors or research — only what is in this BrandState.',
+  ),
+  explanation: text(
+    'Why these two things cannot comfortably coexist, in a sentence a non-strategist would follow. Not a restatement of the evidence.',
+  ),
+  recommendedCorrection: text(
+    'The smallest change that would resolve it, naming which side you would move and why that side rather than the other. A proposal for a human to accept or reject — it is never applied automatically.',
+  ),
+  status: z
+    .enum(['open', 'acknowledged', 'resolved'])
+    .describe('Set by a human after the fact, not by you. Leave it out.')
+    .optional(),
+});
+
+/** Whether one dimension could actually be compared. */
+export const DimensionEvaluationSchema = strictObject({
+  dimension: z.enum(CONSISTENCY_DIMENSIONS),
+  status: z
+    .enum(['evaluated', 'partial', 'not-testable'])
+    .describe(
+      'evaluated = you could compare this properly. partial = only against some of what it needs. not-testable = the section it depends on is not written yet. Reporting evaluated for something you could not check gives a false sense of safety.',
+    ),
+  note: text('Why, when the status is not a plain evaluated. Say what was missing.').optional(),
+});
+
 export const ConsistencySchema = strictObject({
   status: z
     .enum(['not-yet-checked', 'consistent', 'issues-found'])
     .describe(
       'consistent only when the sections genuinely agree. issues-found when they do not. Never not-yet-checked: that is the value before a check has run, so returning it would be a contradiction.',
     ),
+  findings: z
+    .array(ConsistencyFindingSchema)
+    .describe(
+      'Every conflict you found. An empty array with a consistent status is a valid and good result — it means the parts genuinely agree. Do not pad it to look thorough.',
+    ),
+  dimensionsChecked: z
+    .array(DimensionEvaluationSchema)
+    .describe('One entry per dimension you were asked to compare, saying whether you could.'),
   lastCheckedAt: text('When the check ran, as an ISO 8601 timestamp. Set by the pipeline; leave it out.').optional(),
   checkedAgainstVersion: text('Set by the pipeline; leave it out.').optional(),
   notes: z
     .array(text())
     .describe(
-      'What you found, one entry per observation, each naming the BrandState fields involved. Record what holds together as well as what does not, so a later revision does not break something that was working.',
+      'Observations that are not conflicts, one per entry, each naming the BrandState fields involved. Record what holds together, so a later revision does not break something that was working.',
     )
     .optional(),
 });
@@ -764,6 +827,24 @@ export const BrandStateFileSchema = strictObject({
   ),
   consistency: strictObject({
     status: looseText,
+    findings: z.array(
+      strictObject({
+        category: looseText,
+        severity: looseText,
+        conflictingElements: looseList,
+        evidence: looseText,
+        explanation: looseText,
+        recommendedCorrection: looseText,
+        status: looseText.optional(),
+      }),
+    ),
+    dimensionsChecked: z.array(
+      strictObject({
+        dimension: looseText,
+        status: looseText,
+        note: looseText.optional(),
+      }),
+    ),
     lastCheckedAt: looseText.optional(),
     checkedAgainstVersion: looseText.optional(),
     notes: looseList.optional(),

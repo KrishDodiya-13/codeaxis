@@ -17,6 +17,7 @@ import {
   ModelTimeoutError,
   SchemaValidationError,
   BattleInputError,
+  ConsistencyInputError,
   DiscoveryIncompleteError,
   IndistinctStrategiesError,
   InvalidDirectionsError,
@@ -24,6 +25,7 @@ import {
   DiscoverInputError,
   RefusalError,
   SectionParseError,
+  UncheckableConsistencyError,
   VagueCategoryError,
 } from 'brandstate';
 import type { ApiErrorBody, ApiErrorCode } from '@/lib/api/contracts';
@@ -140,6 +142,7 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
       error instanceof DiscoverInputError ||
       error instanceof PositionInputError ||
       error instanceof BattleInputError ||
+      error instanceof ConsistencyInputError ||
       error instanceof InvalidDirectionsError
     ) {
       return fail(400, 'invalid_request', error.message);
@@ -200,6 +203,14 @@ export async function handle<T>(run: () => Promise<NextResponse<T>>): Promise<Ne
       // Retrying is worth a shot; returning them would defeat the point of the battle.
       return fail(502, 'directions_not_distinct', error.message, {
         details: { collisions: error.reasons },
+        retryable: true,
+      });
+    }
+    if (error instanceof UncheckableConsistencyError) {
+      // Findings whose evidence cites nothing cannot be shown as though the engine had
+      // checked them, so this is an error rather than a partial result.
+      return fail(502, 'consistency_findings_uncheckable', error.message, {
+        details: { problems: error.problems },
         retryable: true,
       });
     }

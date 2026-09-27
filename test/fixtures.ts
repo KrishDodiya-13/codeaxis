@@ -365,6 +365,29 @@ const stressTests: StressTest[] = [
 
 const consistency: Consistency = {
   status: 'issues-found',
+  findings: [
+    {
+      category: 'toneMismatch',
+      severity: 'medium',
+      conflictingElements: ['personality', 'voice'],
+      evidence:
+        'personality.traits lists "exacting" while voice.tone reads as warm and reassuring, which is the opposite register.',
+      explanation:
+        'A brand that promises precision but speaks soothingly reads as hedging: the reader cannot tell whether a claim is exact or merely kind.',
+      recommendedCorrection:
+        'Move voice.tone toward plain and precise rather than warm. Voice is the later decision and the cheaper one to change, and personality was the bet the strategy was chosen on.',
+    },
+  ],
+  dimensionsChecked: [
+    { dimension: 'audience', status: 'evaluated' },
+    { dimension: 'positioning', status: 'evaluated' },
+    { dimension: 'personality', status: 'evaluated' },
+    { dimension: 'voice', status: 'evaluated' },
+    { dimension: 'visualDirection', status: 'evaluated' },
+    { dimension: 'messaging', status: 'evaluated' },
+    { dimension: 'valueProposition', status: 'evaluated' },
+    { dimension: 'differentiator', status: 'evaluated' },
+  ],
   lastCheckedAt: '2026-09-27T09:00:00.000Z',
   checkedAgainstVersion: SCHEMA_VERSION,
   notes: [

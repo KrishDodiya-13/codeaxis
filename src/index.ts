@@ -3,6 +3,10 @@ export type {
   BrandState,
   BrandStateSection,
   Consistency,
+  ConsistencyCategory,
+  ConsistencyDimension,
+  ConsistencyFinding,
+  DimensionEvaluation,
   Discovery,
   FinalBrand,
   MessagingHierarchy,
@@ -27,12 +31,19 @@ export type {
   VisualDirection,
 } from './types.ts';
 
-export { DECISION_NAMES, TEST_TYPES } from './types.ts';
+export {
+  CONSISTENCY_CATEGORIES,
+  CONSISTENCY_DIMENSIONS,
+  DECISION_NAMES,
+  TEST_TYPES,
+} from './types.ts';
 
 export {
   BrandStateFileSchema,
   BrandStateSchema,
+  ConsistencyFindingSchema,
   ConsistencySchema,
+  DimensionEvaluationSchema,
   DiscoverResultSchema,
   DiscoverySchema,
   PositionResponseSchema,
@@ -214,6 +225,27 @@ export type {
   StressTestRequest,
   StressTestResponse,
 } from './stress.ts';
+
+export {
+  CONSISTENCY_SEVERITY_ORDER,
+  ConsistencyInputError,
+  UncheckableConsistencyError,
+  buildConsistencyReports,
+  checkConsistency,
+  completeDimensionEvaluations,
+  findUncheckableFindings,
+  openConsistencyFindings,
+  summarizeConsistency,
+  testableDimensions,
+  validateConsistencyRequest,
+} from './consistency.ts';
+export type {
+  ConsistencyOptions,
+  ConsistencyRequest,
+  ConsistencyResponse,
+  ConsistencySummary,
+  DimensionReport,
+} from './consistency.ts';
 
 export { createDiscoverServer, listen } from './server.ts';
 export type { ServerOptions } from './server.ts';

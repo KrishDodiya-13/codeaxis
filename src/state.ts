@@ -98,7 +98,7 @@ export function createInitialState(project: Project): BrandState {
     stressTests: [],
     // Distinct from `consistent`: an unchecked brand has not been verified, and
     // conflating the two would let an unexamined state pass for a checked one.
-    consistency: { status: 'not-yet-checked' },
+    consistency: { status: 'not-yet-checked', findings: [], dimensionsChecked: [] },
   };
 }
 

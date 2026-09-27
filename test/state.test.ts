@@ -69,7 +69,11 @@ describe('isSectionPopulated', () => {
   });
 
   it('treats a completed consistency check as derived, even with no notes', () => {
-    const state = applyDelta(createInitialState(project), 'consistency', { status: 'consistent' });
+    const state = applyDelta(createInitialState(project), 'consistency', {
+      status: 'consistent',
+      findings: [],
+      dimensionsChecked: [{ dimension: 'audience', status: 'evaluated' }],
+    });
     assert.equal(isSectionPopulated(state, 'consistency'), true);
   });
 

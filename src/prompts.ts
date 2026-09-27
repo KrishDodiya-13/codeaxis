@@ -375,21 +375,40 @@ Out of scope: no names or taglines — those are already decided in naming. No c
 
   consistency: `# This step: consistency
 
-Cross-check the sections against each other. You are looking for contradictions between decisions, not weak decisions — a section can agree with everything around it and still be unambitious, and that is not your call here.
+Cross-check the brand against itself. You are looking for parts that disagree, not parts that are weak — a brand can be perfectly consistent and still unambitious, and judging ambition is not this step's job. The stress test already asks whether the decisions are good.
 
-Check at least:
+## The eight parts you compare
 
-- positioning against discovery: does the position serve the audience and need that were identified?
-- personality against the chosen strategy: does the character express the direction that was actually selected, or has it drifted toward a safer or more familiar one? A CONNECTION strategy with a competitive, status-driven personality is this check's main catch.
-- naming against personality: does the selected name and tagline sound like that character, or were they chosen for sound alone?
-- voice against personality: is the voice a genuine translation of the character into writing rules, or the same adjectives again?
-- visualDirection against personality and voice: would this visual system read as this brand to someone who never sees the words?
-- the chosen strategy against its own recorded risks: has the work so far walked into a risk the strategy itself named?
-- stressTests: are there findings still open at high or critical severity that nothing has answered?
+audience, positioning, personality, voice, visualDirection, messaging, valueProposition, differentiator.
 
-Set status to issues-found if you find any contradiction, and consistent only if you genuinely find none. Do not return not-yet-checked — that is the value before a check has run.
+Three of those are not sections of their own — messaging, valueProposition and differentiator live inside positioning and the selected strategy. Name the part, not the section that happens to hold it.
 
-Put every observation in notes, one per entry, each naming the BrandState fields involved. Record what holds together as well as what does not: a later revision needs to know what it must not break.`,
+## What counts as a finding
+
+- **contradiction** — two parts cannot both be true. A CONNECTION strategy with a competitive, status-driven personality is this check's main catch.
+- **weakAlignment** — they do not conflict, but neither reinforces the other. The audience is developers and nothing in the voice or visual system would appeal to one in particular.
+- **unclearPositioning** — the position is too vague to check the other parts against. If you cannot tell whether the voice serves the position because the position says nothing specific, that is this.
+- **toneMismatch** — voice and personality pull different ways, or the voice's own rules fight each other.
+- **visualStrategicConflict** — the visual system says something the strategy does not. Would this palette and type read as this brand to someone who never sees the words?
+- **messagingInconsistency** — the messages disagree with each other, with the value proposition, or with the differentiator.
+
+## Rules
+
+Every finding needs at least two entries in conflictingElements. A conflict has two sides; if you can only name one part, you have found a weak decision, not a disagreement, and it does not belong here.
+
+Evidence must quote this BrandState and cite field paths — \`personality.traits\` vs \`voice.tone\`, \`positioning.differentiator\` vs \`selected_strategy.differentiation\`. Evidence that cites no field path will be rejected. Never cite market data, competitors, research or customer behaviour: you have this state and nothing else.
+
+explanation says why the two cannot comfortably coexist, in a sentence a non-strategist would follow. Not the evidence again in other words.
+
+recommendedCorrection names the smallest change that resolves it, and says **which side you would move and why that side rather than the other**. It is a proposal for a human to accept or reject. It is never applied automatically, so do not write it as though the change has been made.
+
+## Reporting a clean result
+
+If the parts genuinely agree, return an empty findings array. That is a valid and good result — say it plainly rather than manufacturing a minor finding so the step has something to show.
+
+For every dimension you were asked to compare, add an entry to dimensionsChecked saying whether you could. A dimension whose section is not written yet is not-testable, not a pass: claiming you compared something you could not see is worse than admitting it. Silence is indistinguishable from not having looked.
+
+Put observations that are not conflicts in notes — in particular, what holds together. A later revision needs to know what it must not break.`,
 
   finalBrand: `# This step: final brand
 
@@ -752,6 +771,51 @@ Return a finding for every real problem you find, and an entry in evaluatedTypes
  * evidence" reliably produces findings that name a section without naming the
  * fields, which is the same unauditable output one step removed.
  */
+export type ConsistencyPromptInput = {
+  brandState: string;
+  scope: readonly string[];
+  /** Dimensions whose source sections are actually populated. */
+  testable: readonly string[];
+};
+
+/** The CONSISTENCY user turn: the whole state, and which parts to compare. */
+export function buildConsistencyPrompt(input: ConsistencyPromptInput): string {
+  const sections: string[] = [
+    `Here is the brand state as it currently stands. This is the only evidence you have.
+
+<brand_state>
+${input.brandState}
+</brand_state>`,
+  ];
+
+  const untestable = input.scope.filter((dimension) => !input.testable.includes(dimension));
+  if (untestable.length > 0) {
+    sections.push(`These parts cannot be compared yet, because the sections they come from are not written: ${untestable.join(', ')}.
+
+Do not invent conflicts against them. Mark each as not-testable in dimensionsChecked, naming what was missing.`);
+  }
+
+  sections.push(`Compare these parts: ${input.scope.join(', ')}.
+
+Return a finding for every real disagreement, and an entry in dimensionsChecked for each part above — including the ones that agree, so the reader can tell a pass from a comparison that could not run.`);
+
+  return sections.join('\n\n');
+}
+
+/** Re-asks after findings came back uncheckable, naming what was wrong. */
+export function buildConsistencyRetryPrompt(
+  original: string,
+  problems: readonly string[],
+): string {
+  return `${original}
+
+A previous attempt returned findings that do not meet the bar:
+
+${problems.map((problem) => `- ${problem}`).join('\n')}
+
+Return the full set of findings again, with those corrected. Cite actual BrandState field paths in evidence — \`personality.traits\`, \`positioning.differentiator\` — not just a section name or a description of where to look. Name at least two conflictingElements per finding, drawn only from the parts you were asked to compare. Do not drop a finding to avoid fixing it, and do not add new ones.`;
+}
+
 export function buildStressRetryPrompt(original: string, problems: readonly string[]): string {
   return `${original}
 
