@@ -1,5 +1,10 @@
 import MascotPortfolioHero from '@/components/ui/mascot-portfolio-hero'
 import SiteHeader, { SITE_HEADER_HEIGHT } from '@/components/landing/site-header'
+import OverviewSection from '@/components/landing/overview-section'
+import WorkflowSection from '@/components/landing/workflow-section'
+import StressTestSection from '@/components/landing/stress-test-section'
+import BrandOsSection from '@/components/landing/brand-os-section'
+import ClosingSection from '@/components/landing/closing-section'
 
 export default function Home() {
   return (
@@ -34,6 +39,11 @@ export default function Home() {
           'Okay, you can stop poking me :)',
         ]}
       />
+      <OverviewSection />
+      <WorkflowSection />
+      <StressTestSection />
+      <BrandOsSection />
+      <ClosingSection />
     </main>
   )
 }
