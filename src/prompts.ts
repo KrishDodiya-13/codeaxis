@@ -54,19 +54,53 @@ Continuity of voice. Decisions made early set the tone for everything after. A b
 
 Length. Write to the length the field needs, not to fill it. One sharp sentence beats three vague ones. Arrays should contain entries that each carry their own weight; three real constraints are worth more than eight generic ones.`;
 
+/**
+ * The DISCOVER step.
+ *
+ * This is the first real AI step, and the one most at risk of running ahead of
+ * itself: given a one-line idea, the tempting move is to produce a brand, which
+ * means inventing the audience, goals and constraints that everything downstream
+ * would then be built on. The instructions below are weighted toward refusing
+ * that — the deliverable is an honest account of what is known and what is not.
+ */
+export const DISCOVER_INSTRUCTIONS = `# This step: discovery
+
+Turn the raw idea into a structured problem statement. Do not generate a brand. Identify what you still need to know.
+
+A one-sentence idea is not enough information to brand anything. If you skip ahead, you will invent audience details, goals and constraints the user never gave you, and every later step will be built on those guesses. Your job is to extract what genuinely can be inferred and to flag explicitly everything that cannot.
+
+## The rules
+
+1. **Extract, do not invent.** Populate problem, targetAudience, userNeed, goals, constraints and assumptions only with what is stated or can be narrowly and reasonably inferred. If something is not there, it goes in missingInformation — not into a field as a guess.
+2. **Bias toward more missingInformation, not less.** A short list is a red flag that you are quietly assuming things. For a one-line idea, five to ten gaps is normal and expected.
+3. **No brand language.** No names, taglines, personality words, colors, category claims, differentiators or "this could be called X". Anything belonging to positioning, shape or visualDirection is out of scope and must not leak in — not even as an aside.
+4. **Questions must be answerable in one sentence.** "What is your vision?" is useless. "Should this be tied to specific events, or a general always-on pool?" is answerable.
+5. **Empty arrays are valid output, not a failure.** Do not pad goals or constraints with filler to avoid returning an empty list. An honest, sparse result is correct behaviour.
+
+## problem and userNeed are different fields
+
+Do not collapse them; positioning needs both later.
+
+- **problem** is the situational pain point: *"Students want to join hackathons but struggle to find teammates with complementary skills before registration deadlines."*
+- **userNeed** is the motivation underneath it: *"Students need a low-friction way to signal their skills and availability, and to trust that a match is a good one, without relying on existing social circles."*
+
+The problem is what we solve. The need is why anyone cares.
+
+## assumptions
+
+Every field you filled by inference rather than because the user said it produces an entry here. If the idea did not say who the customer is, the customer you described is an assumption. This is what lets a later reader see which parts of discovery rest on a guess.
+
+## followUpQuestions
+
+Roughly one per entry in missingInformation, and concretely answerable. A person should be able to answer each in a sentence, without thinking about branding.
+
+## Out of scope
+
+No brand name, tagline or positioning statement. No colors, type or visual direction. No category, differentiator or competitive angle. Those are later phases and only run once discovery is sufficient. Not requiring every field to be non-empty is deliberate.`;
+
 /** Per-step instructions. Appended after `METHODOLOGY`, so they stay outside the cached prefix. */
 export const STEP_INSTRUCTIONS: Record<BrandStateSection, string> = {
-  discovery: `# This step: discovery
-
-Map the problem space behind the idea. You have only the project seed, so this step sets the ground everything else stands on.
-
-- problem: the problem from the user's side, not the product's. What is going wrong in someone's day.
-- targetAudience: specific enough that it excludes people. "Small business owners" excludes no one; "solo bookkeepers who took on their first employee this year" does.
-- userNeed: the need under the request. People do not want a project tracker; they want to stop being the only one who knows what is late.
-- goals: what the brand has to achieve for the product to be worth branding at all.
-- constraints: real limits implied by the idea — channel, budget, regulation, category convention, technical reality.
-- assumptions: what you are taking on faith. Be honest here; this is the section that protects every later step. If the seed did not say who the customer is, the customer you picked is an assumption.
-- openQuestions: what you would ask the user before committing further. Questions whose answers would change the work, not polite filler.`,
+  discovery: DISCOVER_INSTRUCTIONS,
 
   positioning: `# This step: positioning
 
@@ -149,6 +183,57 @@ Carry the name, tagline and positioning statement through from the selected stra
 - visualIdentity: the visual direction as a finished spec, in the same shape as visualDirection.
 - applications: where and how the brand shows up — specific surfaces, with what appears on them.`,
 };
+
+/** The first DISCOVER call: nothing but the raw idea. */
+export function buildDiscoverPrompt(idea: string): string {
+  return `Here is the idea, in the user's own words.
+
+<idea>
+${idea}
+</idea>
+
+Produce the discovery object. Remember that you are identifying what you still need to know, not generating a brand.`;
+}
+
+/**
+ * A later DISCOVER call, after the user has answered some of the questions.
+ *
+ * The prior object is sent in full so the model refines it rather than starting
+ * over — anything already established has to survive, and only the gaps the
+ * answers actually closed may disappear.
+ */
+export function buildRediscoverPrompt(
+  idea: string,
+  priorDiscovery: string,
+  answers: string,
+): string {
+  return `Here is the idea, in the user's own words.
+
+<idea>
+${idea}
+</idea>
+
+Here is the discovery object you produced previously.
+
+<prior_discovery>
+${priorDiscovery}
+</prior_discovery>
+
+Here is what the user has now told you, answering your follow-up questions.
+
+<answers>
+${answers}
+</answers>
+
+Produce the updated discovery object, merging the new information into the prior one.
+
+- Keep everything already established that the answers do not contradict. This is a refinement, not a fresh start.
+- Where an answer closes a gap, remove that entry from missingInformation and its question from followUpQuestions, and move the information into the field it belongs in.
+- Where an answer supersedes something you had inferred, update the field and drop the corresponding assumption — it is now stated, not assumed.
+- Where an answer raises a new gap, add it. Answers often do.
+- Where a question went unanswered, keep it. Do not quietly drop a question because the user skipped it.
+- Do not invent progress. If the answers were thin, missingInformation should still be long.`;
+}
 
 /** The user-turn prompt: the state, then the ask. */
 export function buildUserPrompt(section: BrandStateSection, serializedState: string): string {

@@ -55,6 +55,17 @@ export type DeriveResult<T> = {
   usage: Usage;
 };
 
+export type DeriveOptions = {
+  /**
+   * Replaces the default "here is the state, derive this section" user turn.
+   *
+   * DISCOVER uses this: its first call has no state to send, only the raw idea,
+   * and a re-invocation sends the prior discovery object plus the user's
+   * answers. The cached system prefix is unaffected either way.
+   */
+  userPrompt?: string;
+};
+
 /** Thrown when the model returns something the step's schema rejects. */
 export class SectionParseError extends Error {
   readonly section: BrandStateSection;
@@ -117,6 +128,7 @@ export class BrandClient {
     section: BrandStateSection,
     serializedState: string,
     schema: z.ZodType<T>,
+    options: DeriveOptions = {},
   ): Promise<DeriveResult<T>> {
     const request = {
       model: this.model,
@@ -125,7 +137,12 @@ export class BrandClient {
         { type: 'text' as const, text: METHODOLOGY, cache_control: { type: 'ephemeral' as const } },
         { type: 'text' as const, text: STEP_INSTRUCTIONS[section] },
       ],
-      messages: [{ role: 'user' as const, content: buildUserPrompt(section, serializedState) }],
+      messages: [
+        {
+          role: 'user' as const,
+          content: options.userPrompt ?? buildUserPrompt(section, serializedState),
+        },
+      ],
       thinking: { type: 'adaptive' as const },
       output_config: {
         effort: this.effort,

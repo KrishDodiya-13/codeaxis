@@ -5,7 +5,8 @@
  * the stub deriver's canned responses — so the pipeline tests exercise the real
  * merge, dependency and validation logic without an API key or a network call.
  */
-import type { SectionDeriver, Usage } from '../src/client.ts';
+import type { DeriveOptions, SectionDeriver, Usage } from '../src/client.ts';
+import type { DiscoverResult } from '../src/discover.ts';
 import type {
   BrandState,
   BrandStateSection,
@@ -26,6 +27,23 @@ export const project: Project = {
   goal: 'Be the obvious choice for agencies productising their first offer.',
 };
 
+/**
+ * The DISCOVER response, as the endpoint returns it.
+ *
+ * Built so `toDiscoverySection` maps it exactly onto `discovery` below, which
+ * keeps the mapping honest: if the two drift, a test fails.
+ */
+export const discoverResult: DiscoverResult = {
+  problem: 'Agency owners sell their own time and cannot step away without revenue stopping.',
+  targetAudience: 'Owners of 5-to-20-person service agencies who have tried packaging an offer once and abandoned it.',
+  userNeed: 'To stop being the bottleneck in their own delivery.',
+  goals: ['Be understood in one sentence by a non-technical owner', 'Signal operational rigour, not hustle'],
+  constraints: ['Sold founder-to-founder, not through a sales team', 'Competes with spreadsheets and habit'],
+  assumptions: ['Owners already believe productising is the answer and are stuck on execution'],
+  missingInformation: ['Whether the buyer is the owner or an operations lead'],
+  followUpQuestions: ['Is the buyer the owner or an operations lead?'],
+};
+
 const discovery: Discovery = {
   problem: 'Agency owners sell their own time and cannot step away without revenue stopping.',
   targetAudience: 'Owners of 5-to-20-person service agencies who have tried packaging an offer once and abandoned it.',
@@ -34,6 +52,46 @@ const discovery: Discovery = {
   constraints: ['Sold founder-to-founder, not through a sales team', 'Competes with spreadsheets and habit'],
   assumptions: ['Owners already believe productising is the answer and are stuck on execution'],
   openQuestions: ['Is the buyer the owner or an operations lead?'],
+};
+
+/**
+ * The worked example from the Phase 2 spec, verbatim.
+ *
+ * Kept so the schema is checked against the contract as written, not only
+ * against fixtures shaped to fit it.
+ */
+export const specWorkedExample: DiscoverResult = {
+  problem:
+    "Students who want to participate in hackathons often can't find teammates with complementary skills before registration closes, especially if they don't already have a network of technical peers.",
+  targetAudience: 'Students (likely college/university level) who want to participate in hackathons.',
+  userNeed:
+    'A fast, low-friction way to find and vet potential teammates based on skills, interests, and availability — without relying on pre-existing social or campus networks.',
+  goals: ["Help students form hackathon teams before a given event's deadline"],
+  constraints: [],
+  // Not in the spec's example, which predates tracking this distinction; these
+  // are the inferences its own output visibly rests on.
+  assumptions: [
+    'The students are at college or university level, which the idea implies but does not state',
+  ],
+  missingInformation: [
+    'Whether this targets a specific school/campus or is open to any student, anywhere',
+    'Whether it is tied to specific hackathons/events or is a general teammate-matching pool',
+    "What 'finding' a teammate means in practice — a swipe/match model, a searchable directory, a posted-listing model, or something else",
+    'Team size constraints or team formation rules the app should respect',
+    'Whether users need to verify they are students (e.g. .edu email)',
+    'Platform target (web, mobile, both)',
+    'Monetization or business model, if any',
+    'Timeline, budget, or team size available to build this',
+  ],
+  followUpQuestions: [
+    'Is this for students at a specific school/university, or open to students anywhere?',
+    'Should this be tied to specific hackathon events, or a general always-on pool of students looking for teammates?',
+    "How do you picture the matching working — profiles people browse, a swipe-style match, or posted 'looking for X skill' listings?",
+    'Are there any team size limits or rules (e.g. max 4 people, must include a designer) the app should account for?',
+    'Do you want to verify users are actual students, e.g. requiring a .edu email?',
+    'Is this a mobile app, a web app, or both?',
+    'Do you have a rough budget, timeline, or team size for building this?',
+  ],
 };
 
 const positioning: Positioning = {
@@ -176,20 +234,29 @@ const stubUsage: Usage = {
  * have seen.
  */
 export class StubDeriver implements SectionDeriver {
-  readonly calls: Array<{ section: BrandStateSection; serializedState: string }> = [];
+  readonly calls: Array<{
+    section: BrandStateSection;
+    serializedState: string;
+    userPrompt: string | undefined;
+  }> = [];
 
   async deriveSection<T>(
     section: BrandStateSection,
     serializedState: string,
     schema: { parse(value: unknown): unknown },
+    options?: DeriveOptions,
   ): Promise<{ value: T; usage: Usage }> {
-    this.calls.push({ section, serializedState });
+    this.calls.push({ section, serializedState, userPrompt: options?.userPrompt });
 
-    // stressTests is requested wrapped in an object, matching the real schema.
+    // Two sections are not requested in their BrandState shape: stressTests is
+    // wrapped in an object because a format needs an object root, and discovery
+    // is requested as a DISCOVER result and mapped afterwards.
     const raw =
       section === 'stressTests'
         ? { stressTests: sectionFixtures.stressTests }
-        : sectionFixtures[section];
+        : section === 'discovery'
+          ? discoverResult
+          : sectionFixtures[section];
 
     // Parsing through the real schema keeps the fixtures honest: a fixture that
     // drifts out of schema fails the test rather than silently passing.

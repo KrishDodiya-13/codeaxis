@@ -7,6 +7,10 @@
  */
 import { BrandClient, RefusalError, SectionParseError } from './client.ts';
 import type { Effort } from './client.ts';
+import { DiscoverResultSchema } from './schemas.ts';
+import { discover } from './discover.ts';
+import type { DiscoverRequest } from './discover.ts';
+import { createDiscoverServer, listen } from './server.ts';
 import { renderMarkdown } from './report.ts';
 import { MissingDependencyError, STEPS, runStep } from './steps.ts';
 import { isComplete, rollbackTo, runPipeline } from './pipeline.ts';
@@ -33,6 +37,8 @@ Usage
   brandstate validate              Check a saved run against the schemas.
   brandstate rollback <section>    Discard a section and everything after it.
   brandstate diff <other.json>     Compare a saved run against another file.
+  brandstate discover <idea>       Run DISCOVER alone and print the result.
+  brandstate serve                 Serve POST /api/discover.
 
 Options
   --run <path>        Run file. Default: runs/brand.json
@@ -45,6 +51,10 @@ Options
   --force             For "step": re-derive a section that is already populated.
   --md <path>         Also write the Markdown report to this path.
   --json              For "show": print the state as JSON instead of Markdown.
+  --answers <text>    For "discover": answers to a previous call's questions.
+  --prior <path>      For "discover": the discovery object those answers reply to.
+  --port <n>          For "serve". Default: 3000
+  --host <name>       For "serve". Default: 127.0.0.1
 
 Sections
   ${SECTION_ORDER.join(', ')}
@@ -248,6 +258,50 @@ async function commandDiff(args: Args): Promise<void> {
   }
 }
 
+async function commandDiscover(args: Args): Promise<void> {
+  const idea = args.positionals.join(' ').trim();
+  if (idea === '') fail('An idea is required: brandstate discover "<idea>"');
+
+  const request: DiscoverRequest = { idea };
+  const priorPath = flagString(args, 'prior');
+  const answers = flagString(args, 'answers');
+
+  if (priorPath !== undefined) {
+    const { readFile } = await import('node:fs/promises');
+    request.priorDiscovery = DiscoverResultSchema.parse(JSON.parse(await readFile(priorPath, 'utf8')));
+  }
+  if (answers !== undefined) request.answers = answers;
+  if (answers !== undefined && priorPath === undefined) {
+    fail('--answers needs --prior: the answers reply to the questions in that discovery object.');
+  }
+
+  const result = await discover(clientFrom(args), request);
+  process.stdout.write(`${stableStringify(result.value, 2)}\n`);
+
+  const gaps = result.value.missingInformation.length;
+  process.stderr.write(
+    gaps === 0
+      ? '\nNothing outstanding — discovery is sufficient.\n'
+      : `\n${gaps} gap${gaps === 1 ? '' : 's'} outstanding. Answer the questions and pass this object back with --prior.\n`,
+  );
+}
+
+async function commandServe(args: Args): Promise<void> {
+  const portFlag = flagString(args, 'port');
+  if (portFlag !== undefined && !/^\d+$/.test(portFlag)) {
+    fail(`--port must be a positive integer, got "${portFlag}".`);
+  }
+
+  const host = flagString(args, 'host') ?? '127.0.0.1';
+  const server = createDiscoverServer({
+    model: flagString(args, 'model'),
+    effort: flagString(args, 'effort') as never,
+  });
+
+  const port = await listen(server, portFlag === undefined ? 3000 : Number(portFlag), host);
+  process.stderr.write(`Listening on http://${host}:${port}\n  POST /api/discover\n  GET  /health\n`);
+}
+
 /** Saves the run, plus the Markdown report when `--md` was passed. */
 async function persist(args: Args, path: string, state: BrandState): Promise<void> {
   await saveState(path, state);
@@ -279,6 +333,8 @@ async function main(): Promise<void> {
     validate: commandValidate,
     rollback: commandRollback,
     diff: commandDiff,
+    discover: commandDiscover,
+    serve: commandServe,
   };
 
   const handler = commands[args.command];
