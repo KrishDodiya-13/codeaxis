@@ -195,11 +195,12 @@ function buildNodes(ws: StrategyWorkspace): DnaNode[] {
   ]
 }
 
+// Opaque fills, so the edges running behind a node never show through its text.
 const NODE_STYLE: Record<NodeStatus, string> = {
-  empty: 'border-dashed border-poster-ink/25 bg-white/70 text-poster-ink/45',
-  assumption: 'border-dashed border-[#d4a72c] bg-[#f2c94c]/25',
+  empty: 'border-dashed border-poster-ink/25 bg-white text-poster-ink/45',
+  assumption: 'border-dashed border-[#d4a72c] bg-[#fcf3d9]',
   confirmed: 'border-poster-ink bg-poster-green',
-  stale: 'border-[#d4a72c] bg-[#f2c94c] animate-pulse motion-reduce:animate-none',
+  stale: 'border-[#d4a72c] bg-[#f2c94c]',
 }
 
 const TAB_NAMES: Record<TabKey, string> = {
@@ -260,7 +261,7 @@ export default function DnaTab({
       </div>
 
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="relative aspect-[16/11] min-h-[380px] w-full overflow-hidden rounded-3xl border-2 border-poster-ink/15 bg-white/60">
+        <div className="relative aspect-[16/10] min-h-[380px] w-full overflow-hidden rounded-3xl border-2 border-poster-ink/15 bg-white/60">
           <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             {EDGES.map(([a, b]) => {
               const from = byKey[a]
@@ -300,10 +301,16 @@ export default function DnaTab({
                 selected === n.key && 'scale-[1.06] shadow-[4px_4px_0_0_#111]',
               )}
             >
+              {n.status === 'stale' && (
+                // Pulses a halo rather than the node, so the text stays readable while it signals.
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -inset-1.5 animate-pulse rounded-[20px] ring-4 ring-[#f2c94c] motion-reduce:animate-none"
+                />
+              )}
               <span className="block text-[11px] font-extrabold uppercase tracking-wide">{n.label}</span>
-              <span className="mt-0.5 line-clamp-2 block text-xs font-semibold leading-tight">
-                {n.decision ?? n.statusText}
-              </span>
+              {/* No `block` here: it would override line-clamp's -webkit-box and let the node grow. */}
+              <span className="mt-0.5 line-clamp-2 text-xs font-semibold leading-tight">{n.decision ?? n.statusText}</span>
             </button>
           ))}
         </div>

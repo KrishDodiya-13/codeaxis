@@ -77,9 +77,16 @@ export function modelErrorResponse(e: unknown, stageLabel: string) {
   // Groq's per-minute token cap on the free tier. Brand Battle can exceed it when it has
   // to rebuild two directions that came out too alike, so a retry often gets through.
   if (e instanceof ModelRequestError && e.status === 413) {
+    // "Limit 8000, Requested 12268": one request bigger than the whole allowance will never
+    // fit however long you wait, so only suggest waiting when waiting can actually help.
+    const limit = Number(e.message.match(/Limit (\d+)/)?.[1])
+    const requested = Number(e.message.match(/Requested (\d+)/)?.[1])
+    const neverFits = limit > 0 && requested > limit
     return errorResponse(
       429,
-      `This ${stageLabel} request was larger than your Groq tier's per-minute token limit. Wait a minute and try again, or upgrade the Groq tier.`,
+      neverFits
+        ? `The ${stageLabel} request needs ${requested.toLocaleString()} tokens, but your Groq tier allows ${limit.toLocaleString()} per minute. Retrying rarely helps; upgrading the Groq tier (console.groq.com/settings/billing) does.`
+        : `This ${stageLabel} request hit your Groq tier's per-minute token limit. Wait a minute and try again.`,
       e.message,
     )
   }

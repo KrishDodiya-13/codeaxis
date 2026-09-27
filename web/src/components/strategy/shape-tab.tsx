@@ -36,7 +36,9 @@ function Choice({
   return (
     <label
       className={cn(
-        'flex cursor-pointer gap-3 rounded-2xl border-2 px-4 py-3 has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-poster-green/40',
+        // `relative` keeps the sr-only radio inside this label; without it, focusing the
+        // radio scrolls the page's overflow-hidden container and the layout jumps.
+        'relative flex cursor-pointer gap-3 rounded-2xl border-2 px-4 py-3 has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-poster-green/40',
         checked ? 'border-poster-ink bg-poster-green/10' : 'border-poster-ink/15 bg-white hover:border-poster-ink/40',
         disabled && 'cursor-not-allowed opacity-60',
       )}

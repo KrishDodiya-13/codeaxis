@@ -7,6 +7,8 @@ import {
   buildBrandDna,
   createInitialState,
   hasDanglingSelection,
+  migrateState,
+  needsMigration,
   runStep,
   toDiscoverySection,
   type BrandState,
@@ -61,7 +63,11 @@ function issues(error: z.ZodError) {
 
 /** Validates a state sent by the browser. It is user-controlled input, never trusted. */
 function parseState(value: unknown): { state: BrandState } | { response: NextResponse } {
-  const parsed = BrandStateFileSchema.safeParse(value)
+  // A workspace saved in the browser under an older engine contract is brought forward
+  // first, as GET /api/projects/:id does. The migrated state goes back to the page with
+  // the response and is saved there, so each old workspace migrates once.
+  const current = needsMigration(value) ? migrateState(value).state : value
+  const parsed = BrandStateFileSchema.safeParse(current)
   if (!parsed.success) {
     return { response: errorResponse(400, 'The saved strategy is not a valid brand state.', issues(parsed.error)) }
   }
