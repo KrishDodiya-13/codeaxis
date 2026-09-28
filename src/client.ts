@@ -716,11 +716,20 @@ export class BrandClient {
         } catch (error) {
           lastError = error;
 
-          const exhaustedAllowance =
+          // This model specifically is the problem — its allowance is spent, or it kept
+          // answering overloaded/gateway/service-unavailable even after the full retry
+          // budget above. Either way a different model is a real fix, not a gamble: it
+          // has its own quota and its own capacity. Anything else (a bad key, a
+          // malformed schema, a refusal, a timeout) would fail the same way on every
+          // model, so those still propagate straight out, exactly as before this chain
+          // existed.
+          const modelUnavailable =
             error instanceof QuotaExceededError ||
-            (error instanceof ModelRequestError && error.status === 429);
+            (error instanceof ModelRequestError &&
+              error.status !== undefined &&
+              TRANSIENT_STATUSES.has(error.status));
           const hasNextModel = modelIndex < this.modelChain.length - 1;
-          if (!exhaustedAllowance || !hasNextModel) throw error;
+          if (!modelUnavailable || !hasNextModel) throw error;
 
           const nextModel = this.modelChain[modelIndex + 1];
           console.warn(

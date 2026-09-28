@@ -176,19 +176,39 @@ describe('BrandClient retries transient model failures', () => {
   });
 
   it('gives up after a bounded number of attempts and reports the last status', async () => {
-    // One more overload than the attempt budget allows, so the reply is never reached.
+    // Pinned to one model: this is testing the per-model retry budget, not the
+    // cross-model fallback below, which deliberately does move on from a model that
+    // stays overloaded through its whole retry budget.
+    await withSingleModelChain(DEFAULT_MODEL, async () => {
+      // One more overload than the attempt budget allows, so the reply is never reached.
+      const overloads = Array.from({ length: TRANSIENT_ATTEMPTS }, () =>
+        withStatus('overloaded', 503),
+      );
+      const { run, state } = await derive([...overloads, reply(discoverResult)]);
+
+      await assert.rejects(run, (error: unknown) => {
+        assert.ok(error instanceof ModelRequestError);
+        assert.equal(error.status, 503);
+        return true;
+      });
+      // Bounded: it stops rather than reaching the reply that would have succeeded.
+      assert.equal(state.attempts, TRANSIENT_ATTEMPTS);
+    });
+  });
+
+  it('falls back to the next model once one stays overloaded through its whole retry budget', async () => {
+    // The first model in the default chain answers "overloaded" on every attempt within
+    // its own retry budget, then the second model in the chain gets the request instead
+    // of the stage failing outright.
     const overloads = Array.from({ length: TRANSIENT_ATTEMPTS }, () =>
       withStatus('overloaded', 503),
     );
     const { run, state } = await derive([...overloads, reply(discoverResult)]);
 
-    await assert.rejects(run, (error: unknown) => {
-      assert.ok(error instanceof ModelRequestError);
-      assert.equal(error.status, 503);
-      return true;
-    });
-    // Bounded: it stops rather than reaching the reply that would have succeeded.
-    assert.equal(state.attempts, TRANSIENT_ATTEMPTS);
+    const result = await run();
+
+    assert.equal(state.attempts, TRANSIENT_ATTEMPTS + 1);
+    assert.equal(result.value.problem, discoverResult.problem);
   });
 
   it('does not retry a bad credential, which would fail identically every time', async () => {
