@@ -52,6 +52,36 @@ export function resolveModel(explicit?: string): string {
   return fromEnv === '' ? DEFAULT_MODEL : fromEnv;
 }
 
+/** Optional override for {@link FALLBACK_MODELS}. Server-side only, comma-separated. */
+export const FALLBACK_MODEL_ENV_VAR = 'GROQ_FALLBACK_MODELS';
+
+/**
+ * Models tried, in order, after the resolved model's daily allowance is exhausted.
+ *
+ * Groq's free tier meters tokens per day *per model*, so a spent `openai/gpt-oss-120b`
+ * quota and a spent `openai/gpt-oss-20b` quota are independent budgets — falling through
+ * to the next one turns "the demo is down until midnight Pacific" into "the next request
+ * is a little slower." Kept to models confirmed to accept this client's exact request
+ * shape (`response_format: json_schema` best-effort, `reasoning_effort`), so no per-model
+ * branching is needed in {@link BrandClient.deriveSectionInner}. `gpt-oss-safeguard-20b`
+ * is deliberately excluded: it is a moderation model, not a general one, and answers this
+ * pipeline's prompts differently.
+ */
+export const FALLBACK_MODELS: readonly string[] = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
+
+/**
+ * The resolved model plus its fallbacks, de-duplicated and in try-order.
+ *
+ * `GROQ_FALLBACK_MODELS` replaces the default list entirely when set, so an operator can
+ * pin the chain to exactly what their key has access to.
+ */
+export function resolveModelChain(explicit?: string): string[] {
+  const primary = resolveModel(explicit);
+  const fromEnv = (process.env[FALLBACK_MODEL_ENV_VAR] ?? '').trim();
+  const fallbacks = fromEnv === '' ? FALLBACK_MODELS : fromEnv.split(',').map((m) => m.trim()).filter((m) => m !== '');
+  return Array.from(new Set([primary, ...fallbacks]));
+}
+
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /**
@@ -489,6 +519,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export class BrandClient {
   private readonly client: Groq;
   readonly model: string;
+  /** {@link model} followed by the models tried when its daily quota is exhausted. */
+  private readonly modelChain: string[];
   readonly effort: Effort;
   readonly maxTokens: number;
   readonly timeoutMs: number;
@@ -503,6 +535,7 @@ export class BrandClient {
     this.client =
       options.client ?? new Groq({ apiKey: (process.env[CREDENTIAL_ENV_VAR] ?? '').trim() });
     this.model = resolveModel(options.model);
+    this.modelChain = resolveModelChain(options.model);
     this.effort = options.effort ?? 'high';
     this.maxTokens = options.maxTokens ?? DEFAULT_MAX_TOKENS;
     this.timeoutMs = options.timeoutMs ?? 180_000;
@@ -589,83 +622,111 @@ export class BrandClient {
       // an unknown model, a refusal — fails on the first attempt, because retrying it
       // would only delay the same error.
       let lastError: unknown;
-      // Lowered when the provider refuses the request for size. The requested cap counts
-      // against a per-minute budget, so asking for less can make an otherwise identical
-      // request fit — which beats failing the stage outright.
-      let cap = this.maxTokens;
-      // The lowest cap the provider has already refused as too large. Raising is never
-      // allowed to reach it, which is what stops a raise/reduce oscillation.
-      let refusedAt = Number.POSITIVE_INFINITY;
-      let adjustments = 0;
-      for (let attempt = 0; attempt < TRANSIENT_ATTEMPTS; attempt++) {
+
+      // Outer loop: one pass per model in the chain. A model is only ever left for the
+      // next one when the failure is specific to *that model's* allowance — an exhausted
+      // daily quota, or a 429 that never cleared after the full retry budget below. A bad
+      // key, a malformed schema, or a refusal would fail identically on every model, so
+      // those still propagate straight out on the first model, exactly as before this
+      // chain existed.
+      for (const [modelIndex, model] of this.modelChain.entries()) {
         try {
-          return await this.client.chat.completions.create(
-            {
-              model: this.model,
-              messages: [
-                {
-                  role: 'system',
-                  content: `${METHODOLOGY}\n\n${options.instructions ?? STEP_INSTRUCTIONS[section]}`,
-                },
-                {
-                  role: 'user',
-                  content: options.userPrompt ?? buildUserPrompt(section, serializedState),
-                },
-              ],
-              response_format: {
-                type: 'json_schema',
-                json_schema: {
-                  name: section,
-                  // Best-effort rather than strict: strict mode requires every property
-                  // to be listed in `required`, and several sections have genuinely
-                  // optional fields (a human-set status, an optional confidence). Zod
-                  // stays the authority either way, so a miss is caught and reported
-                  // rather than rendered.
-                  strict: false,
-                  schema: toGroqSchema(schema) as Record<string, unknown>,
-                },
-              },
-              max_completion_tokens: cap,
-              reasoning_effort: REASONING_EFFORT[this.effort],
-            },
-            { signal: AbortSignal.timeout(this.timeoutMs) },
-          );
-        } catch (error) {
-          lastError = classify(section, error, this.timeoutMs);
+          // Lowered when the provider refuses the request for size. The requested cap
+          // counts against a per-minute budget, so asking for less can make an otherwise
+          // identical request fit — which beats failing the stage outright. Reset per
+          // model: a cap another model refused says nothing about this one's budget.
+          let cap = this.maxTokens;
+          // The lowest cap the provider has already refused as too large. Raising is
+          // never allowed to reach it, which is what stops a raise/reduce oscillation.
+          let refusedAt = Number.POSITIVE_INFINITY;
+          let adjustments = 0;
 
-          // Too large: shrink the requested cap and try again immediately. No backoff —
-          // nothing is busy, the ask was simply bigger than the budget allows.
-          // Two opposite adjustments, both bounded, so the cap converges on a value
-          // that fits the budget and still holds a whole section.
-          if (adjustments < MAX_CAP_ADJUSTMENTS) {
-            if (isRequestTooLargeError(lastError) && cap > MIN_MAX_TOKENS) {
-              const reduced = reduceCap(cap, (lastError as Error).message);
-              if (reduced < cap) {
-                refusedAt = Math.min(refusedAt, cap);
-                cap = reduced;
-                adjustments++;
-                continue;
-              }
-            }
+          for (let attempt = 0; attempt < TRANSIENT_ATTEMPTS; attempt++) {
+            try {
+              return await this.client.chat.completions.create(
+                {
+                  model,
+                  messages: [
+                    {
+                      role: 'system',
+                      content: `${METHODOLOGY}\n\n${options.instructions ?? STEP_INSTRUCTIONS[section]}`,
+                    },
+                    {
+                      role: 'user',
+                      content: options.userPrompt ?? buildUserPrompt(section, serializedState),
+                    },
+                  ],
+                  response_format: {
+                    type: 'json_schema',
+                    json_schema: {
+                      name: section,
+                      // Best-effort rather than strict: strict mode requires every
+                      // property to be listed in `required`, and several sections have
+                      // genuinely optional fields (a human-set status, an optional
+                      // confidence). Zod stays the authority either way, so a miss is
+                      // caught and reported rather than rendered.
+                      strict: false,
+                      schema: toGroqSchema(schema) as Record<string, unknown>,
+                    },
+                  },
+                  max_completion_tokens: cap,
+                  reasoning_effort: REASONING_EFFORT[this.effort],
+                },
+                { signal: AbortSignal.timeout(this.timeoutMs) },
+              );
+            } catch (error) {
+              lastError = classify(section, error, this.timeoutMs);
 
-            if (isTruncatedError(lastError)) {
-              // Doubling, but never up to a cap already known to be refused.
-              const ceiling = Math.min(MAX_MAX_TOKENS, refusedAt - BUDGET_MARGIN_TOKENS);
-              const raised = Math.min(ceiling, cap * 2);
-              if (raised > cap) {
-                cap = raised;
-                adjustments++;
-                continue;
+              // Too large: shrink the requested cap and try again immediately. No
+              // backoff — nothing is busy, the ask was simply bigger than the budget
+              // allows. Two opposite adjustments, both bounded, so the cap converges on
+              // a value that fits the budget and still holds a whole section.
+              if (adjustments < MAX_CAP_ADJUSTMENTS) {
+                if (isRequestTooLargeError(lastError) && cap > MIN_MAX_TOKENS) {
+                  const reduced = reduceCap(cap, (lastError as Error).message);
+                  if (reduced < cap) {
+                    refusedAt = Math.min(refusedAt, cap);
+                    cap = reduced;
+                    adjustments++;
+                    continue;
+                  }
+                }
+
+                if (isTruncatedError(lastError)) {
+                  // Doubling, but never up to a cap already known to be refused.
+                  const ceiling = Math.min(MAX_MAX_TOKENS, refusedAt - BUDGET_MARGIN_TOKENS);
+                  const raised = Math.min(ceiling, cap * 2);
+                  if (raised > cap) {
+                    cap = raised;
+                    adjustments++;
+                    continue;
+                  }
+                }
               }
+
+              const retryable =
+                lastError instanceof ModelRequestError &&
+                lastError.status !== undefined &&
+                TRANSIENT_STATUSES.has(lastError.status);
+              if (!retryable || attempt === TRANSIENT_ATTEMPTS - 1) throw lastError;
+              await sleep(TRANSIENT_BACKOFF_MS * 2 ** attempt);
             }
           }
+          throw lastError;
+        } catch (error) {
+          lastError = error;
 
-          const retryable =
-            lastError instanceof ModelRequestError &&
-            lastError.status !== undefined &&
-            TRANSIENT_STATUSES.has(lastError.status);
-          if (!retryable || attempt === TRANSIENT_ATTEMPTS - 1) throw lastError;
-          await sleep(TRANSIENT_BACKOFF_MS * 2 ** attempt);
+          const exhaustedAllowance =
+            error instanceof QuotaExceededError ||
+            (error instanceof ModelRequestError && error.status === 429);
+          const hasNextModel = modelIndex < this.modelChain.length - 1;
+          if (!exhaustedAllowance || !hasNextModel) throw error;
+
+          const nextModel = this.modelChain[modelIndex + 1];
+          console.warn(
+            `[brandos] ${section}: ${model} unavailable (${(error as Error).name}: ` +
+              `${(error as Error).message}) — falling back to ${nextModel}.`,
+          );
         }
       }
       throw lastError;

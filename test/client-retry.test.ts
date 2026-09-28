@@ -11,6 +11,7 @@ import type Groq from 'groq-sdk';
 import {
   BrandClient,
   DEFAULT_MODEL,
+  FALLBACK_MODEL_ENV_VAR,
   InvalidCredentialError,
   MODEL_ENV_VAR,
   ModelRequestError,
@@ -67,6 +68,22 @@ async function derive(outcomes: unknown[], options: { model?: string } = {}) {
   return { run, state, model: brandClient.model };
 }
 
+/**
+ * Runs `fn` with the fallback chain pinned to exactly one model, so a test can assert
+ * same-model retry behaviour without the model-fallback feature (below) changing what
+ * count of attempts is "no retry". Restores whatever was set before, including unset.
+ */
+async function withSingleModelChain<T>(model: string, fn: () => Promise<T>): Promise<T> {
+  const previous = process.env[FALLBACK_MODEL_ENV_VAR];
+  process.env[FALLBACK_MODEL_ENV_VAR] = model;
+  try {
+    return await fn();
+  } finally {
+    if (previous === undefined) delete process.env[FALLBACK_MODEL_ENV_VAR];
+    else process.env[FALLBACK_MODEL_ENV_VAR] = previous;
+  }
+}
+
 describe('BrandClient retries transient model failures', () => {
   it('retries a 503 and succeeds on a later attempt', async () => {
     const { run, state } = await derive([
@@ -92,15 +109,45 @@ describe('BrandClient retries transient model failures', () => {
     assert.equal(state.attempts, 2);
   });
 
-  it('does not retry a spent allowance, because waiting will not refill it', async () => {
+  it('does not retry a spent allowance on the same model, because waiting will not refill it', async () => {
+    // Chain pinned to one model: this is testing the per-model retry decision, not the
+    // cross-model fallback below, which deliberately does move on from a spent quota.
+    await withSingleModelChain(DEFAULT_MODEL, async () => {
+      const { run, state } = await derive([
+        withStatus('Rate limit reached on tokens per day (TPD): Limit 200000, Used 199990', 429),
+        reply(discoverResult),
+      ]);
+
+      await assert.rejects(run, QuotaExceededError);
+      // One attempt only: retrying the same model's daily quota just adds load and
+      // delays the real answer.
+      assert.equal(state.attempts, 1);
+    });
+  });
+
+  it('falls back to the next model when the current one reports a spent allowance', async () => {
     const { run, state } = await derive([
       withStatus('Rate limit reached on tokens per day (TPD): Limit 200000, Used 199990', 429),
       reply(discoverResult),
     ]);
 
+    const result = await run();
+
+    // First model's quota is spent, so the second model in the default chain picks up
+    // the same request rather than failing the whole stage.
+    assert.equal(state.attempts, 2);
+    assert.equal(result.value.problem, discoverResult.problem);
+  });
+
+  it('gives up once every model in the chain reports a spent allowance', async () => {
+    const quota = () =>
+      withStatus('Rate limit reached on tokens per day (TPD): Limit 200000, Used 199990', 429);
+    // One per model in the default chain (primary + two fallbacks), all exhausted.
+    const { run, state } = await derive([quota(), quota(), quota(), reply(discoverResult)]);
+
     await assert.rejects(run, QuotaExceededError);
-    // One attempt only: retrying a daily quota just adds load and delays the real answer.
-    assert.equal(state.attempts, 1);
+    // Never reaches the fourth scripted outcome: the chain has exactly three models.
+    assert.equal(state.attempts, 3);
   });
 
   it('tells a quota apart from a rate limit by the wording the provider uses', () => {
@@ -113,14 +160,18 @@ describe('BrandClient retries transient model failures', () => {
   });
 
   it('carries the reset hint through, so a caller can say when to come back', async () => {
-    const { run } = await derive([
-      withStatus('quota exceeded. Please try again in 20m4.4s', 429),
-    ]);
+    // Pinned to one model: the hint itself is independent of the fallback feature, and
+    // pinning keeps this test unaffected by how many models the default chain has.
+    await withSingleModelChain(DEFAULT_MODEL, async () => {
+      const { run } = await derive([
+        withStatus('quota exceeded. Please try again in 20m4.4s', 429),
+      ]);
 
-    await assert.rejects(run, (error: unknown) => {
-      assert.ok(error instanceof QuotaExceededError);
-      assert.equal(error.retryAfter, '20m4.4s');
-      return true;
+      await assert.rejects(run, (error: unknown) => {
+        assert.ok(error instanceof QuotaExceededError);
+        assert.equal(error.retryAfter, '20m4.4s');
+        return true;
+      });
     });
   });
 
