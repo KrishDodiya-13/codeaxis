@@ -716,18 +716,22 @@ export class BrandClient {
         } catch (error) {
           lastError = error;
 
-          // This model specifically is the problem — its allowance is spent, or it kept
+          // This model specifically is the problem — its allowance is spent, it kept
           // answering overloaded/gateway/service-unavailable even after the full retry
-          // budget above. Either way a different model is a real fix, not a gamble: it
-          // has its own quota and its own capacity. Anything else (a bad key, a
-          // malformed schema, a refusal, a timeout) would fail the same way on every
-          // model, so those still propagate straight out, exactly as before this chain
-          // existed.
+          // budget above, or this request alone is bigger than its per-minute token cap
+          // (413). A 413 is deliberately excluded from TRANSIENT_STATUSES — retrying the
+          // same model can never fit a request that already exceeds its per-minute cap —
+          // but a different model can have a materially larger cap, so it still counts as
+          // this model being unavailable for this request, not a reason to give up. Either
+          // way a different model is a real fix, not a gamble: it has its own quota and its
+          // own capacity. Anything else (a bad key, a malformed schema, a refusal, a
+          // timeout) would fail the same way on every model, so those still propagate
+          // straight out, exactly as before this chain existed.
           const modelUnavailable =
             error instanceof QuotaExceededError ||
             (error instanceof ModelRequestError &&
               error.status !== undefined &&
-              TRANSIENT_STATUSES.has(error.status));
+              (TRANSIENT_STATUSES.has(error.status) || error.status === 413));
           const hasNextModel = modelIndex < this.modelChain.length - 1;
           if (!modelUnavailable || !hasNextModel) throw error;
 
